@@ -1,0 +1,25 @@
+# OPSEC & Keys
+.env
+jwt.hex
+*.pem
+walcert.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+
+# Build & Logs
+build/
+logs/
+*.log
+data/*.log
+data/quota_usage.json
+data/reports/
+data/history.json
+!data/.gitkeep
+
+# OS files
+.DS_Store
