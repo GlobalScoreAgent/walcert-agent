@@ -363,9 +363,48 @@ La respuesta HTTP del agente incluye `analysis` + `certificate` (grade A–F). V
     "certificate_id": "...",
     "type": "ORIGINS",
     "grade": "B",
-    "grade_label": "Bueno",
+    "grade_label": { "eng": "Good", "esp": "Bueno" },
+    "provider": "Powered by Global Score Agent. We provide specialized scoring for autonomous agents with daily indices. Contact us or visit our website: globalscoreagent.com",
+    "issuer": { "name": "Walcert Agent", "agent_id": "9699", "erc8004_agent_id": "eip155:42220:0xF4D9...", "version": "1.0" },
     "details": { },
-    "data_hash": "0x..."
+    "data_hash": "0x...",
+    "signature": {
+      "scheme": "eip712",
+      "signer": "0xE7e9f27e02149696b33C332b1C2e19F4BF723e51",
+      "signature": "0x...",
+      "domain": { "name": "Walcert Certificate", "version": "1", "chainId": 42220 },
+      "primary_type": "Certificate"
+    },
+    "onchain": {
+      "status": "confirmed",
+      "protocol": "erc8004-reputation",
+      "method": "giveFeedback",
+      "chain_id": 42220,
+      "contract": "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63",
+      "agent_id": 9699,
+      "monitor": "0xE7e9f27e02149696b33C332b1C2e19F4BF723e51",
+      "tx_hash": "0x...",
+      "block_number": 12345678,
+      "feedback_index": 1,
+      "value": 5,
+      "value_decimals": 2,
+      "tag1": "certificate_issued",
+      "tag2": "ORIGINS",
+      "feedback_hash": "0x...",
+      "explorer_url": "https://celoscan.io/tx/0x...",
+      "anchored_at": "2026-07-19T05:00:00Z"
+    }
   }
 }
 ```
+
+> Nota sobre `provider`: hay dos campos con ese nombre. El `provider` del **envelope** (nivel superior) indica el proveedor de datos (`alchemy|moralis|zerion`). El `provider` dentro de **`certificate`** es el texto de marca ("Powered by Global Score Agent…") y solo aparece en los certificados completos (no en el preview).
+
+### Verificabilidad on-chain (`signature` + `onchain`)
+
+Solo en los certificados **pagados** (`POST /v1/certificates/*`). El preview gratis no los incluye. Ambos bloques se agregan DESPUES de calcular `data_hash`, por lo que no alteran el hash.
+
+- **`signature`** (EIP-712): firma de la wallet del agente sobre el `data_hash` y campos clave del certificado. Se verifica recuperando el firmante y comparando con `signature.signer`. Autenticidad instantanea, sin gas.
+- **`onchain`** (ERC-8004 Reputation Registry en Celo): por cada certificado se llama `giveFeedback` desde una wallet monitor dedicada (distinta al owner del `agentId`). El `feedbackHash` transporta el `data_hash` (prueba on-chain de emision) y `value/value_decimals` el monto pagado, de modo que `getSummary(agentId, "certificate_issued")` expone a la vez el conteo de certificados y los ingresos acumulados. Si el anclaje falla, `onchain.status = "failed"` y el certificado igual se entrega firmado.
+
+Verificacion independiente: `python scripts/verify_certificate.py <cert.json>` (recupera el firmante EIP-712 y confirma el evento `NewFeedback` con `feedbackHash == data_hash`).

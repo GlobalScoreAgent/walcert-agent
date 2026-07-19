@@ -95,14 +95,18 @@ async def create_certificate(
         raise HTTPException(status_code=404, detail="Unknown certificate type")
 
     try:
-        result = await run_certificate(certificate_type, body.wallet_address)
+        result = await run_certificate(
+            certificate_type, body.wallet_address, certify=True
+        )
         # Correlacion para el registro de compra x402 (lo lee PaymentLogMiddleware).
         # x402 preserva estos headers al recomponer la respuesta tras el settle.
         cert = result.get("certificate") or {}
+        onchain = cert.get("onchain") or {}
         response.headers["X-Walcert-Certificate-Id"] = str(cert.get("certificate_id") or "")
         response.headers["X-Walcert-Certificate-Type"] = certificate_type
         response.headers["X-Walcert-Grade"] = str(cert.get("grade") or "")
         response.headers["X-Walcert-Wallet"] = body.wallet_address
+        response.headers["X-Walcert-Tx-Hash"] = str(onchain.get("tx_hash") or "")
         return result
     except QuotaExceeded as exc:
         payload = CertificateUnavailable(

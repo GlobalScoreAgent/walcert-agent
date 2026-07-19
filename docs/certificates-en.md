@@ -144,4 +144,13 @@ Common grade scale:
 
 `data_hash` is the SHA-256 of the canonical certificate (excluding the hash itself), so integrity can be verified.
 
+## On-chain verifiability (paid certificates)
+
+Paid certificates (`POST /v1/certificates/*`) add two fields after `data_hash` (they do not change the hash):
+
+- **`signature`** — an EIP-712 signature by the agent's wallet over the `data_hash`. Anyone can recover the signer and confirm it matches `signature.signer`. Instant, gasless authenticity.
+- **`onchain`** — a per-certificate anchor on the ERC-8004 Reputation Registry on Celo (`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`). For each issuance the agent calls `giveFeedback` from a dedicated monitor wallet (distinct from the agent's owner). The `feedbackHash` carries the `data_hash` (on-chain proof of issuance) and `value`/`value_decimals` carry the amount paid, so `getSummary(agentId, "certificate_issued")` returns both the certificate count and cumulative revenue. If anchoring fails, `onchain.status = "failed"` and the signed certificate is still delivered.
+
+Independent verification: `python scripts/verify_certificate.py <cert.json>` recovers the EIP-712 signer and confirms the `NewFeedback` event with `feedbackHash == data_hash`.
+
 See also: [certificate-json-schemas.md](certificate-json-schemas.md) and [edge-function-security.md](edge-function-security.md).

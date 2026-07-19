@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Any
 
@@ -18,6 +19,9 @@ _alchemy = AlchemyProvider()
 _moralis = MoralisProvider()
 _zerion = ZerionProvider()
 _edge = EdgeScoringClient()
+
+# Locks por cache_key para evitar firmar/anclar dos veces el mismo certificado.
+_certify_locks: dict[str, asyncio.Lock] = {}
 
 
 def _parse_ts(value: str | None) -> datetime | None:
@@ -81,10 +85,14 @@ async def _merge_celo_into_multichain(
     return analysis
 
 
-async def run_certificate(certificate_type: str, wallet: str) -> dict[str, Any]:
+async def run_certificate(
+    certificate_type: str, wallet: str, certify: bool = False
+) -> dict[str, Any]:
     cache_key = f"{certificate_type}:{wallet.lower()}"
     cached = _cache.get(cache_key)
     if cached is not None:
+        if certify:
+            cached = await _maybe_certify(cache_key, cached)
         return cached
 
     if certificate_type == "origins":
@@ -125,6 +133,45 @@ async def run_certificate(certificate_type: str, wallet: str) -> dict[str, Any]:
         )
 
     _cache.set(cache_key, result)
+
+    if certify:
+        result = await _maybe_certify(cache_key, result)
+
+    return result
+
+
+async def _maybe_certify(cache_key: str, result: dict[str, Any]) -> dict[str, Any]:
+    """Firma EIP-712 + ancla on-chain el certificado una sola vez (idempotente).
+
+    Solo aplica en el endpoint pagado. Best-effort: si el anclaje falla, el
+    certificado igual se entrega con `onchain.status = "failed"`.
+    """
+    if not (_settings.cert_signing_enabled or _settings.onchain_anchor_enabled):
+        return result
+    cert = result.get("certificate")
+    if not cert or cert.get("signature") or cert.get("onchain"):
+        return result
+
+    lock = _certify_locks.setdefault(cache_key, asyncio.Lock())
+    async with lock:
+        # Re-check tras el lock: otra corrutina pudo certificar mientras esperaba.
+        cert = result.get("certificate")
+        if not cert or cert.get("signature") or cert.get("onchain"):
+            return result
+
+        from app import onchain
+        from app.onchain_log import schedule_onchain_log
+
+        certified = await asyncio.to_thread(onchain.certify, cert)
+        result["certificate"] = certified
+        _cache.set(cache_key, result)
+
+        # Persistencia en Supabase (fire-and-forget, tras la respuesta).
+        schedule_onchain_log(
+            certified.get("certificate_id"),
+            certified.get("onchain"),
+            certified.get("signature"),
+        )
     return result
 
 

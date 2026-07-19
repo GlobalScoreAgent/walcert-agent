@@ -144,4 +144,13 @@ Escala común de notas:
 
 El campo `data_hash` es el SHA-256 del certificado canónico (sin el propio hash), y permite verificar su integridad.
 
+## Verificabilidad on-chain (certificados pagados)
+
+Los certificados pagados (`POST /v1/certificates/*`) agregan dos campos después de `data_hash` (no alteran el hash):
+
+- **`signature`** — firma EIP-712 de la wallet del agente sobre el `data_hash`. Cualquiera puede recuperar el firmante y confirmar que coincide con `signature.signer`. Autenticidad instantánea y sin gas.
+- **`onchain`** — anclaje por certificado en el ERC-8004 Reputation Registry de Celo (`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`). Por cada emisión el agente llama `giveFeedback` desde una wallet monitor dedicada (distinta al owner del agente). El `feedbackHash` transporta el `data_hash` (prueba on-chain de emisión) y `value`/`value_decimals` el monto pagado, de modo que `getSummary(agentId, "certificate_issued")` devuelve a la vez el conteo de certificados y los ingresos acumulados. Si el anclaje falla, `onchain.status = "failed"` y el certificado igual se entrega firmado.
+
+Verificación independiente: `python scripts/verify_certificate.py <cert.json>` recupera el firmante EIP-712 y confirma el evento `NewFeedback` con `feedbackHash == data_hash`.
+
 Ver también: [certificate-json-schemas.md](certificate-json-schemas.md) y [edge-function-security.md](edge-function-security.md).

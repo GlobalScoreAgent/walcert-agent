@@ -26,6 +26,9 @@ export function issuer() {
   };
 }
 
+export const PROVIDER =
+  "Powered by Global Score Agent. We provide specialized scoring for autonomous agents with daily indices. Contact us or visit our website: globalscoreagent.com";
+
 export async function sha256Hex(input: string): Promise<string> {
   const data = new TextEncoder().encode(input);
   const hash = await globalThis.crypto.subtle.digest("SHA-256", data);
@@ -54,6 +57,7 @@ export async function buildCertificate(params: {
     analyzed_at: params.analyzed_at,
     analysis_mode: "hot",
     issuer: issuer(),
+    provider: PROVIDER,
     grade: params.grade,
     grade_label: gradeLabel(params.grade),
     summary: params.summary,

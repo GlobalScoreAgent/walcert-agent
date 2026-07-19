@@ -89,6 +89,15 @@ class Settings:
     x402_price: str
     payment_log_enabled: bool
     payment_log_slug: str
+    celo_rpc_url: str
+    reputation_registry_address: str
+    cert_signing_enabled: bool
+    onchain_anchor_enabled: bool
+    agent_signer_key: str
+    cert_signer_address: str
+    celo_confirmation_timeout: int
+    onchain_log_enabled: bool
+    onchain_log_slug: str
 
     def __init__(self) -> None:
         self.agent_id = int(os.getenv("AGENT_ID", "9696"))
@@ -206,6 +215,36 @@ class Settings:
         ).strip().lower() in {"1", "true", "yes", "on"}
         self.payment_log_slug = os.getenv(
             "PAYMENT_LOG_SLUG", "walcert-payment-log"
+        ).strip()
+
+        # --- Verificabilidad on-chain (firma EIP-712 + ERC-8004 giveFeedback) ---
+        self.celo_rpc_url = os.getenv(
+            "CELO_RPC_URL", "https://forno.celo.org"
+        ).strip().rstrip("/")
+        self.reputation_registry_address = os.getenv(
+            "REPUTATION_REGISTRY_ADDRESS",
+            "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63",
+        ).strip()
+        self.cert_signing_enabled = os.getenv(
+            "CERT_SIGNING_ENABLED", "false"
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        self.onchain_anchor_enabled = os.getenv(
+            "ONCHAIN_ANCHOR_ENABLED", "false"
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        # Clave de la wallet monitor/firmante dedicada (solo en entorno).
+        # Debe NO ser el owner ni operador del agentId; se recomienda distinta
+        # tambien de la payTo. AGENT_PRIVATE_KEY (owner) NO se usa en runtime.
+        self.agent_signer_key = os.getenv("AGENT_SIGNER_KEY", "").strip()
+        self.cert_signer_address = os.getenv("CERT_SIGNER_ADDRESS", "").strip()
+        self.celo_confirmation_timeout = int(
+            os.getenv("CELO_CONFIRMATION_TIMEOUT", "120")
+        )
+        # Persistencia del bloque onchain en Supabase (Edge dedicada).
+        self.onchain_log_enabled = os.getenv(
+            "ONCHAIN_LOG_ENABLED", "true"
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        self.onchain_log_slug = os.getenv(
+            "ONCHAIN_LOG_SLUG", "walcert-certificate-onchain"
         ).strip()
 
 

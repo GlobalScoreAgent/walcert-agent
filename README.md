@@ -19,9 +19,10 @@ Given a wallet address, the agent runs a fresh analysis and returns a signed cer
 
 All certificate texts (`summary`, `grade_label`, `strengths`, `concerns`) are **bilingual** (`{ "eng": "...", "esp": "..." }`).
 
-Full business documentation:
-- English: [docs/certificates-en.md](docs/certificates-en.md)
-- Español: [docs/certificados-es.md](docs/certificados-es.md)
+Full documentation:
+- Deployment & onboarding (deploy this project): [docs/deployment-guide.md](docs/deployment-guide.md)
+- Business docs — English: [docs/certificates-en.md](docs/certificates-en.md)
+- Business docs — Español: [docs/certificados-es.md](docs/certificados-es.md)
 - JSON schemas: [docs/certificate-json-schemas.md](docs/certificate-json-schemas.md)
 - Edge Function security: [docs/edge-function-security.md](docs/edge-function-security.md)
 
@@ -71,6 +72,23 @@ Flow: a request without payment returns `402` with the payment requirements; the
 
 See [scripts/x402_buyer_test.py](scripts/x402_buyer_test.py) for a reference buyer.
 
+## On-chain verifiable certificates
+
+Paid certificates are made highly verifiable with two layers (added by the agent after the Edge computes `data_hash`, so the hash is unchanged):
+
+1. **EIP-712 signature** by the agent's signer wallet over the `data_hash` (instant, gasless authenticity) — field `signature`.
+2. **Per-certificate on-chain anchor** on the ERC-8004 **Reputation Registry** on Celo (`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`) via `giveFeedback` — field `onchain`. `feedbackHash` carries the `data_hash` and `value`/`value_decimals` carry the amount paid, so `getSummary(agentId, "certificate_issued")` yields both the issued count and cumulative revenue.
+
+The `giveFeedback` call is sent from a **dedicated monitor wallet** that must differ from the agentId owner (the registry forbids self-feedback from owner/operators) and should also differ from the payTo wallet, since its key lives hot on the server (it only needs a little CELO for gas).
+
+Verify any certificate independently:
+
+```bash
+python scripts/verify_certificate.py path/to/certificate.json
+```
+
+It recovers the EIP-712 signer and confirms the on-chain `NewFeedback` event with `feedbackHash == data_hash`.
+
 ## ERC-8004 identity
 
 Registration document: [agent/registration.json](agent/registration.json) (pinned to IPFS via Pinata).
@@ -100,8 +118,10 @@ Key environment variables (see [.env.example](.env.example)):
 - Edge scoring: `SUPABASE_FUNCTIONS_URL`, `EDGE_SHARED_SECRET`, `EDGE_SCORING_ENABLED`
 - x402: `X402_ENABLED`, `X402_NETWORK`, `X402_FACILITATOR_URL`, `X402_FACILITATOR_API_KEY`, `X402_PAY_TO`, `X402_PRICE`
 - Payment logging: `PAYMENT_LOG_ENABLED`, `PAYMENT_LOG_SLUG`
+- On-chain verifiability: `CELO_RPC_URL`, `REPUTATION_REGISTRY_ADDRESS`, `CERT_SIGNING_ENABLED`, `ONCHAIN_ANCHOR_ENABLED`, `AGENT_SIGNER_KEY` (dedicated monitor wallet), `CERT_SIGNER_ADDRESS`, `CELO_CONFIRMATION_TIMEOUT`, `ONCHAIN_LOG_ENABLED`
 
 > `EDGE_SHARED_SECRET` must match the value configured in the Supabase Edge Functions secrets. Never commit real secrets: `.env` and `*.pem` are git-ignored.
+> `AGENT_SIGNER_KEY` is the hot monitor/signer wallet (must NOT be the agentId owner `0x475F…` nor an approved operator; ideally distinct from the payTo `0xF4D9…`). `AGENT_PRIVATE_KEY` (owner) is only for admin scripts, never used at runtime.
 
 ## Examples
 
@@ -134,6 +154,8 @@ Usage is persisted in `data/quota_usage.json` (git-ignored).
 
 The agent runs on an AWS EC2 instance behind a Cloudflare Tunnel (stable public HTTPS at `walcert.globalscoreagent.com`), managed by `systemd` (`uvicorn server:app` on `127.0.0.1:8000`). Helper scripts live under [deploy/](deploy/).
 
+For a full step-by-step deployment (Supabase objects, Edge Functions, secrets, wallets, x402, on-chain and EC2/Cloudflare), see the **[Deployment & Onboarding Guide](docs/deployment-guide.md)**.
+
 ## Project structure
 
 ```text
@@ -141,15 +163,17 @@ server.py                     # FastAPI app + x402 + payment logging wiring
 app/
   config.py                   # Settings from env
   models.py                   # Pydantic models
-  services.py                 # Orchestration (providers -> edge scoring)
+  services.py                 # Orchestration (providers -> edge scoring -> certify)
   payments.py                 # x402 paywall (Celo)
   payment_log.py              # x402 settlement logging middleware
+  onchain.py                  # EIP-712 signing + ERC-8004 giveFeedback anchoring
+  onchain_log.py              # Background client: persist onchain block to Supabase
   routes/certificates.py      # /v1/preview + /v1/certificates + /health
   providers/                  # alchemy, moralis, zerion, edge_scoring, quota, cache
-supabase/functions/           # Edge Functions (scoring) + _shared helpers
+supabase/functions/           # Edge Functions (scoring, payment-log, onchain) + _shared
 agent/registration.json       # ERC-8004 registration document
-docs/                         # Certificate business docs + schemas
-scripts/                      # register / set_agent_uri / pin metadata / x402 buyer / e2e
+docs/                         # Deployment guide + certificate business docs + schemas
+scripts/                      # register / set_agent_uri / pin metadata / x402 buyer / e2e / verify_certificate
 ```
 
 ## License

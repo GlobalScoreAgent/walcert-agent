@@ -41,6 +41,7 @@ async def main(wallet: str) -> None:
             print(f"  cert_id      : {cert.get('certificate_id')}")
             print(f"  grade        : {cert.get('grade')} ({cert.get('grade_label')})")
             print(f"  data_hash    : {cert.get('data_hash')}")
+            print(f"  provider     : {cert.get('provider')}")
             print(f"  summary(esp) : {(cert.get('summary') or {}).get('esp')}")
         else:
             print("  NO CERTIFICATE returned")
