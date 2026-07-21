@@ -21,6 +21,7 @@ All certificate texts (`summary`, `grade_label`, `strengths`, `concerns`) are **
 
 Full documentation:
 - Deployment & onboarding (deploy this project): [docs/deployment-guide.md](docs/deployment-guide.md)
+- Identity (agentId 9699 alignment): [docs/identity.md](docs/identity.md)
 - Business docs — English: [docs/certificates-en.md](docs/certificates-en.md)
 - Business docs — Español: [docs/certificados-es.md](docs/certificados-es.md)
 - JSON schemas: [docs/certificate-json-schemas.md](docs/certificate-json-schemas.md)

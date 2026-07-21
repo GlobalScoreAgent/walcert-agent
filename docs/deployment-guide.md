@@ -177,8 +177,12 @@ supabase secrets set \
 ```
 
 `EDGE_SHARED_SECRET` **must match** the agent's `.env` value. `WALCERT_ERC8004_AGENT_ID`
-and `WALCERT_AGENT_WALLET` populate the certificate `issuer` block (agentId + wallet). The
-Supabase **service role key** is injected automatically into functions as
+and `WALCERT_AGENT_WALLET` populate the certificate `issuer` block (agentId + wallet).
+Code fallbacks in `supabase/functions/**/_shared/certificate.ts` and agent
+`app/config.py` also default to **9699** / `0xF4D938…AEd095` if those env vars are
+missing — keep secrets, `.env`, and defaults aligned.
+
+The Supabase **service role key** is injected automatically into functions as
 `SUPABASE_SERVICE_ROLE_KEY`; `walcert-payment-log` and `walcert-certificate-onchain` use it
 to write rows — it never leaves the Edge.
 
@@ -211,7 +215,7 @@ See [.env.example](../.env.example) for the annotated template. Groups:
 
 | Group | Variables |
 |-------|-----------|
-| Identity | `AGENT_ID` (9699), `AGENT_WALLET` (payTo), `PUBLIC_BASE_URL`, `CELO_CHAIN_ID` |
+| Identity | `AGENT_ID` (9699), `AGENT_WALLET` (payTo `0xF4D9…`), `PUBLIC_BASE_URL`, `CELO_CHAIN_ID` |
 | Providers | `ALCHEMY_API_KEY`, `ALCHEMY_NETWORKS`, `MORALIS_API_KEY`, `MORALIS_CHAINS`, `ZERION_API_KEY` |
 | Edge scoring | `SUPABASE_FUNCTIONS_URL`, `EDGE_SHARED_SECRET`, `EDGE_SCORING_ENABLED` |
 | x402 | `X402_ENABLED`, `X402_NETWORK`, `X402_FACILITATOR_URL`, `X402_FACILITATOR_API_KEY`, `X402_FACILITATOR_AUTH_HEADER`, `X402_PAY_TO`, `X402_PRICE` |
@@ -338,7 +342,13 @@ confirm the row in `walcert.certificate_requests` has `onchain`, `signature` and
 
 ## 12. Operations
 
-- **Code updates (EC2)**: on the host, `cd /opt/walcert && git pull && sudo systemctl restart walcert-agent`.
+- **Identity alignment (required):** production must use agentId **9699** and payTo
+  `0xF4D938200445B0Df0f028af6d90D016147AEd095` in **all** of: EC2 `.env`
+  (`AGENT_ID`, `AGENT_WALLET`, `X402_PAY_TO`), Edge secrets
+  (`WALCERT_ERC8004_AGENT_ID`, `WALCERT_AGENT_WALLET`), and code defaults. Smoke:
+  `GET /` → `agent_id: 9699`; paid cert `issuer.agent_id == "9699"`.
+- **Code updates (EC2)**: on the host, prefer `scp` of changed files into `/opt/walcert`
+  (the reference host is not a git clone) then `sudo systemctl restart walcert-agent`.
   Smoke: `GET /` (agent card JSON with `provider.eng`/`esp`), `GET /health`,
   `POST /v1/preview/origins` (200), `POST /v1/preview/multichain` (403),
   and rate-limit (`429` after 8 preview hits / 15 min per IP).

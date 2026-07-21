@@ -36,7 +36,7 @@
       "name": "walcert-preview",
       "endpoint": "https://walcert.globalscoreagent.com/v1/preview/origins",
       "version": "0.2.0",
-      "description": "Free preview: returns only the A-F grade (no metrics/signature, no payment). Also available for activity, multichain and portfolio under /v1/preview/{type}."
+      "description": "Free preview: returns only the A-F grade (no metrics/signature, no payment). Available for origins and activity under /v1/preview/{type}. multichain and portfolio require the paid certificate endpoint."
     },
     {
       "name": "health",

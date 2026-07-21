@@ -31,7 +31,16 @@ Cliente ──► Agente (VPS) ──► Edge Function (scoring)
 | Almacenamiento Edge | Supabase Edge Secrets / env del proyecto |
 | Rechazo | Sin secret o secret inválido → **401 Unauthorized**, sin ejecutar scoring |
 
-### 2. No exposición pública útil
+### 2. Identidad del emisor (agentId / wallet)
+
+| Requisito | Detalle |
+|-----------|---------|
+| Edge secrets | `WALCERT_ERC8004_AGENT_ID=9699`, `WALCERT_AGENT_WALLET=0xF4D938…AEd095` |
+| Fallbacks en código | `issuer()` en `**/_shared/certificate.ts` usa los mismos valores si falta el secret |
+| Agente | `.env` `AGENT_ID` / `AGENT_WALLET` deben coincidir (y el agent card `GET /`) |
+| Verificación | Filas recientes en `walcert.certificate_requests` → `certificate.issuer.agent_id` |
+
+### 3. No exposición pública útil
 
 | Requisito | Detalle |
 |-----------|---------|
@@ -39,7 +48,7 @@ Cliente ──► Agente (VPS) ──► Edge Function (scoring)
 | URL no documentada en metadata pública | El `registration.json` / ERC-8004 lista endpoints del **agente**, no la URL interna de la Edge |
 | Sin anon key como única defensa | Si se usa Supabase, **no** basar la seguridad solo en que “nadie conoce la URL”; la `anon` key de un proyecto a menudo es pública en frontends |
 
-### 3. Validación de entrada
+### 4. Validación de entrada
 
 | Requisito | Detalle |
 |-----------|---------|
@@ -49,7 +58,7 @@ Cliente ──► Agente (VPS) ──► Edge Function (scoring)
 | Tamaño máximo | Límite de body (p. ej. 512 KB–1 MB) para evitar abuse |
 | Rechazo | Body inválido → **400** |
 
-### 4. Respuesta mínima
+### 5. Respuesta mínima
 
 | Requisito | Detalle |
 |-----------|---------|
@@ -57,7 +66,7 @@ Cliente ──► Agente (VPS) ──► Edge Function (scoring)
 | No eco del payload crudo | Evitar reenviar todo el `analysis` de vuelta si no hace falta |
 | Errores genéricos al exterior | Mensajes que no filtren internals (`"scoring_failed"`, no stack traces) |
 
-### 5. Rate limiting y abuso
+### 6. Rate limiting y abuso
 
 | Requisito | Detalle |
 |-----------|---------|
@@ -65,7 +74,7 @@ Cliente ──► Agente (VPS) ──► Edge Function (scoring)
 | Timeout | Cortar ejecución larga (p. ej. 10–30 s) |
 | Logs | Registrar `certificate_type`, wallet hasheada o truncada, status — **no** loguear el shared secret ni API keys |
 
-### 6. Transporte
+### 7. Transporte
 
 | Requisito | Detalle |
 |-----------|---------|
