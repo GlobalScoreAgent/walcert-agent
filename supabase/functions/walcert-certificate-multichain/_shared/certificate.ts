@@ -15,9 +15,9 @@ export function gradeLabel(grade: Grade): Bilingual {
 }
 
 export function issuer() {
-  const agentId = Deno.env.get("WALCERT_ERC8004_AGENT_ID") || "9696";
+  const agentId = Deno.env.get("WALCERT_ERC8004_AGENT_ID") || "9699";
   const wallet = Deno.env.get("WALCERT_AGENT_WALLET") ||
-    "0x2eFC66c0a78620Dd254443998BF2f11B685602E3";
+    "0xF4D938200445B0Df0f028af6d90D016147AEd095";
   return {
     name: "Walcert Agent",
     erc8004_agent_id: `eip155:42220:${wallet}`,
