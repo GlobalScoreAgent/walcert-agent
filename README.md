@@ -46,10 +46,10 @@ The agent fetches raw data from the providers, forwards it to the corresponding 
 |--------|------|------|-------------|
 | GET | `/health` | none | Liveness check |
 | GET | `/v1/quota` | none | Provider quota snapshot |
-| POST | `/v1/preview/{type}` | none | **Free** preview: A–F grade only |
+| POST | `/v1/preview/{type}` | none | **Free** preview: A–F grade only (`origins`/`activity`; IP rate-limited) |
 | POST | `/v1/certificates/{type}` | **x402** | Full signed certificate |
 
-`{type}` is one of `origins`, `activity`, `multichain`, `portfolio`. Request body:
+`{type}` for **paid** certificates is one of `origins`, `activity`, `multichain`, `portfolio`. Free preview only allows `origins` and `activity` (`multichain`/`portfolio` → 403). Request body:
 
 ```json
 { "wallet_address": "0x..." }

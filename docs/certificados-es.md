@@ -4,7 +4,7 @@ Walcert Agent es un agente ERC-8004 en **Celo**, desarrollado por **Global Score
 
 El scoring corre en **Supabase Edge Functions** (una por tipo de certificado) y se enriquece con listas de direcciones etiquetadas (CEX, bridges, mixers y sanciones OFAC) almacenadas en Supabase.
 
-- **Preview gratuito** (`POST /v1/preview/{tipo}`): devuelve solo la nota A–F, sin métricas ni firma, sin pago.
+- **Preview gratuito** (`POST /v1/preview/{tipo}`): solo `origins` y `activity` (Alchemy). Devuelve la nota A–F, sin métricas ni firma, sin pago. Rate limit: 8 req/IP cada 15 min. `multichain` y `portfolio` → 403 (usar el endpoint pagado).
 - **Certificado completo** (`POST /v1/certificates/{tipo}`): devuelve el certificado firmado (métricas + `data_hash`). Requiere **pago x402** de **0,05 USDC en Celo mainnet** (liquidación gasless EIP-3009 vía el facilitador `x402.celo.org`).
 
 Todos los textos del certificado (`summary`, `grade_label`, `strengths`, `concerns`) son **bilingües** con la forma `{ "eng": "...", "esp": "..." }`.

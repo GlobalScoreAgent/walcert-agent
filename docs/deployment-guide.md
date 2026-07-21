@@ -41,8 +41,9 @@ Data flow for a paid certificate:
 8. In the background the agent posts the settled payment to `walcert-payment-log` and the
    on-chain result to `walcert-certificate-onchain`, which persist to Supabase.
 
-The **preview** endpoint (`/v1/preview/{type}`) is free, returns grade-only, and never
-signs, anchors or logs payments.
+The **preview** endpoint (`/v1/preview/{type}`) is free, returns grade-only for
+`origins` and `activity` only (rate-limited by IP), and never signs, anchors or logs
+payments. Preview of `multichain` / `portfolio` returns 403.
 
 ---
 
@@ -336,8 +337,13 @@ confirm the row in `walcert.certificate_requests` has `onchain`, `signature` and
 
 ## 12. Operations
 
+- **Code updates (EC2)**: on the host, `cd /opt/walcert && git pull && sudo systemctl restart walcert-agent`.
+  Smoke: `GET /health`, `POST /v1/preview/origins` (200), `POST /v1/preview/multichain` (403),
+  and rate-limit (`429` after 8 preview hits / 15 min per IP).
 - **Quotas**: free-tier limits are enforced per provider and persisted in
   `data/quota_usage.json` (git-ignored). See the README table for defaults.
+  Free preview is limited to Alchemy-backed types (`origins`/`activity`) and
+  rate-limited (8 req/IP / 15 min) — see ADR 2026-07-21.
 - **Logs**: every authenticated Edge request is logged to `walcert.certificate_requests`
   (including `error_message` on failure). Never log the shared secret or API keys.
 - **Secret rotation**: change `EDGE_SHARED_SECRET` in Supabase Edge secrets and the agent

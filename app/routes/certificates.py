@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Path, Response
+from fastapi import APIRouter, HTTPException, Path, Request, Response
 from fastapi.responses import JSONResponse
 
 from app.errors import MissingCredentials, ProviderError, QuotaExceeded
 from app.models import (
     CERTIFICATE_TYPES,
+    PREVIEW_ALLOWED_TYPES,
     PROVIDER_BY_TYPE,
     CertificateRequest,
     CertificateUnavailable,
 )
 from app.providers.quota import get_quota
+from app.rate_limit import check_preview_rate_limit
 from app.services import run_certificate
 
 router = APIRouter()
@@ -45,12 +47,42 @@ def _preview_from_result(certificate_type: str, wallet: str, result: dict) -> di
 
 @router.post("/v1/preview/{certificate_type}")
 async def preview_certificate(
+    request: Request,
     body: CertificateRequest,
     certificate_type: str = Path(..., pattern="^(origins|activity|multichain|portfolio)$"),
 ):
-    """Endpoint sin paywall: devuelve solo el grado, para el dashboard/demo."""
+    """Endpoint sin paywall: grade-only preview (Alchemy types + IP rate limit)."""
     if certificate_type not in CERTIFICATE_TYPES:
         raise HTTPException(status_code=404, detail="Unknown certificate type")
+
+    allowed, retry_after = check_preview_rate_limit(request)
+    if not allowed:
+        return JSONResponse(
+            status_code=429,
+            headers={"Retry-After": str(retry_after)},
+            content={
+                "available": False,
+                "status": "rate_limit_exceeded",
+                "message": {
+                    "eng": "Too many preview requests from this IP. Please try again later.",
+                    "esp": "Demasiadas solicitudes de preview desde esta IP. Intenta de nuevo más tarde.",
+                },
+            },
+        )
+
+    if certificate_type not in PREVIEW_ALLOWED_TYPES:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "available": False,
+                "status": "preview_not_allowed",
+                "certificate_type": certificate_type,
+                "message": {
+                    "eng": "Free preview is only available for origins and activity certificates. Use POST /v1/certificates/{type} (x402 payment) for multichain and portfolio.",
+                    "esp": "El preview gratuito solo está disponible para los certificados origins y activity. Usa POST /v1/certificates/{type} (pago x402) para multichain y portfolio.",
+                },
+            },
+        )
 
     try:
         result = await run_certificate(certificate_type, body.wallet_address)

@@ -13,6 +13,9 @@ CERTIFICATE_TYPES: tuple[str, ...] = (
     "portfolio",
 )
 
+# Free preview is limited to Alchemy-backed types (quota protection).
+PREVIEW_ALLOWED_TYPES: tuple[str, ...] = ("origins", "activity")
+
 PROVIDER_BY_TYPE: dict[str, str] = {
     "origins": "alchemy",
     "activity": "alchemy",
