@@ -177,7 +177,7 @@ X-Walcert-Signature: <hex hmac>   # recomendado
 
 ## Qué NO hacer
 
-1. Poner la URL de la Edge en `dashboard.html`  
+1. Poner la URL de la Edge en metadata pública / agent card / IPFS  
 2. Usar la misma key de Alchemy/Moralis/Zerion dentro de la Edge (en el diseño actual el agente ya trae el semicrudo)  
 3. Confiar solo en “security through obscurity”  
 4. Devolver el código fuente o prompts del modelo de scoring en la respuesta  

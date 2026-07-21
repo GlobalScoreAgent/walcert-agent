@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 
-from app.config import ROOT_DIR, get_settings
+from app.agent_card import build_agent_card
+from app.config import get_settings
 from app.payment_log import install_payment_log
 from app.payments import install_x402
 from app.routes.certificates import router as certificates_router
@@ -38,20 +38,8 @@ app.include_router(certificates_router)
 
 @app.get("/")
 async def root():
-    dashboard = ROOT_DIR / "dashboard.html"
-    if dashboard.exists():
-        return FileResponse(dashboard)
-    return {
-        "agent": "Walcert",
-        "agent_id": settings.agent_id,
-        "docs": "/docs",
-        "certificates": [
-            "/v1/certificates/origins",
-            "/v1/certificates/activity",
-            "/v1/certificates/multichain",
-            "/v1/certificates/portfolio",
-        ],
-    }
+    """Agent discovery card (JSON, bilingual eng/esp). Not a human dashboard."""
+    return build_agent_card(settings)
 
 
 if __name__ == "__main__":

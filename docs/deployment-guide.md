@@ -53,7 +53,8 @@ payments. Preview of `multichain` / `portfolio` returns 403.
 
 | File | Role |
 |------|------|
-| `server.py` | FastAPI app; wires x402 paywall + payment-log middleware |
+| `server.py` | FastAPI app; wires x402 paywall + payment-log middleware; `GET /` agent card |
+| `app/agent_card.py` | Bilingual discovery JSON for `GET /` (not a human dashboard) |
 | `app/config.py` | All settings, read from environment |
 | `app/services.py` | Orchestration: providers → edge scoring → certify (sign + anchor) |
 | `app/routes/certificates.py` | `/health`, `/v1/quota`, `/v1/preview/{type}`, `/v1/certificates/{type}` |
@@ -338,7 +339,8 @@ confirm the row in `walcert.certificate_requests` has `onchain`, `signature` and
 ## 12. Operations
 
 - **Code updates (EC2)**: on the host, `cd /opt/walcert && git pull && sudo systemctl restart walcert-agent`.
-  Smoke: `GET /health`, `POST /v1/preview/origins` (200), `POST /v1/preview/multichain` (403),
+  Smoke: `GET /` (agent card JSON with `provider.eng`/`esp`), `GET /health`,
+  `POST /v1/preview/origins` (200), `POST /v1/preview/multichain` (403),
   and rate-limit (`429` after 8 preview hits / 15 min per IP).
 - **Quotas**: free-tier limits are enforced per provider and persisted in
   `data/quota_usage.json` (git-ignored). See the README table for defaults.

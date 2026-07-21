@@ -44,6 +44,7 @@ The agent fetches raw data from the providers, forwards it to the corresponding 
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
+| GET | `/` | none | **Agent card** JSON (bilingual eng/esp) — discovery, not a UI |
 | GET | `/health` | none | Liveness check |
 | GET | `/v1/quota` | none | Provider quota snapshot |
 | POST | `/v1/preview/{type}` | none | **Free** preview: A–F grade only (`origins`/`activity`; IP rate-limited) |
