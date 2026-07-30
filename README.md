@@ -12,10 +12,12 @@ Given a wallet address, the agent runs a fresh analysis and returns a signed cer
 
 | Type | What it certifies | Data provider |
 |------|-------------------|---------------|
-| `origins` | Source of funds (CEX, bridges, mixers, OFAC) and mixing risk | Alchemy + labeled address tables |
-| `activity` | Recent activity, counterparties and wash-trading / circular patterns | Alchemy + labeled address tables |
-| `multichain` | Multi-network presence, consistency and longevity (incl. Celo) | Moralis (+ Celo via Alchemy) |
-| `portfolio` | Portfolio composition, liquidity and concentration (HHI) | Zerion |
+| `origins` | Source of funds — **`origins-v2.2`**: 9 signals, value-relevant coverage, concentration in grade | Alchemy + DefiLlama + labels |
+| `activity` | Recent activity — **`activity-v2.1`**: 15d window, 11 signals, HHI D@0.70 | Alchemy + DefiLlama + labels |
+| `multichain` | Multichain — **`multichain-v1.5`**: footprint / longevity (public) | Moralis (+ Celo via Alchemy) |
+| `portfolio` | Portfolio — **`portfolio-v2.2`**: dual totals credible/raw, HHI, tiers | Zerion |
+
+**Summit-only:** `POST /v1/summit/certificates/multichain-v2` — **`multichain-v2.1`** (GoldRush footprint + intensity; not on agent card / x402). See [docs/bsg2026-summit.md](docs/bsg2026-summit.md).
 
 All certificate texts (`summary`, `grade_label`, `strengths`, `concerns`) are **bilingual** (`{ "eng": "...", "esp": "..." }`).
 
@@ -26,6 +28,8 @@ Full documentation:
 - Business docs — Español: [docs/certificados-es.md](docs/certificados-es.md)
 - JSON schemas: [docs/certificate-json-schemas.md](docs/certificate-json-schemas.md)
 - Edge Function security: [docs/edge-function-security.md](docs/edge-function-security.md)
+- Virtuals ACP adapter (internal channel): [docs/virtuals-acp.md](docs/virtuals-acp.md)
+- Summit BSG2026 channel (dedicated key, no x402, expires 2026-08-01): [docs/bsg2026-summit.md](docs/bsg2026-summit.md)
 
 ## Architecture
 
@@ -50,12 +54,25 @@ The agent fetches raw data from the providers, forwards it to the corresponding 
 | GET | `/v1/quota` | none | Provider quota snapshot |
 | POST | `/v1/preview/{type}` | none | **Free** preview: A–F grade only (`origins`/`activity`; IP rate-limited) |
 | POST | `/v1/certificates/{type}` | **x402** | Full signed certificate |
+| POST | `/v1/verify` | none | Public hybrid verify by `tx_hash` (DB + Celo + EIP-712 via Edge) |
 
 `{type}` for **paid** certificates is one of `origins`, `activity`, `multichain`, `portfolio`. Free preview only allows `origins` and `activity` (`multichain`/`portfolio` → 403). Request body:
 
 ```json
 { "wallet_address": "0x..." }
 ```
+
+Verify a paid certificate with only the on-chain receipt hash (no original JSON required):
+
+```bash
+curl -sS -X POST https://walcert.globalscoreagent.com/v1/verify \
+  -H "Content-Type: application/json" \
+  -d '{"tx_hash":"0x..."}'
+```
+
+The agent is a thin facade: Supabase Edge Function `walcert-certificate-verify` looks up `walcert.certificate_requests` by `onchain_tx_hash`, confirms `NewFeedback` on Celo, and checks the EIP-712 signature. Dashboard / other UIs should call this same endpoint (do not reimplement Celo RPC).
+
+Offline CLI (JSON in hand): `python scripts/verify_certificate.py path/to/certificate.json`.
 
 ## x402 payments (Celo mainnet)
 
@@ -85,11 +102,8 @@ The `giveFeedback` call is sent from a **dedicated monitor wallet** that must di
 
 Verify any certificate independently:
 
-```bash
-python scripts/verify_certificate.py path/to/certificate.json
-```
-
-It recovers the EIP-712 signer and confirms the on-chain `NewFeedback` event with `feedbackHash == data_hash`.
+- **HTTP (canonical):** `POST /v1/verify` with `{ "tx_hash": "0x..." }` — Edge does DB + Celo + EIP-712.
+- **CLI (offline):** `python scripts/verify_certificate.py path/to/certificate.json` — recovers the EIP-712 signer and confirms the on-chain `NewFeedback` event with `feedbackHash == data_hash`.
 
 ## ERC-8004 identity
 
@@ -161,18 +175,20 @@ For a full step-by-step deployment (Supabase objects, Edge Functions, secrets, w
 ## Project structure
 
 ```text
-server.py                     # FastAPI app + x402 + payment logging wiring
+server.py                     # FastAPI app + x402 + payment logging + internal access
 app/
   config.py                   # Settings from env
   models.py                   # Pydantic models
   services.py                 # Orchestration (providers -> edge scoring -> certify)
-  payments.py                 # x402 paywall (Celo)
+  internal_access.py          # Marketplace + Summit Bearer auth + attribution context
+  payments.py                 # x402 paywall (Celo; bypass for internal/summit)
   payment_log.py              # x402 settlement logging middleware
   onchain.py                  # EIP-712 signing + ERC-8004 giveFeedback anchoring
   onchain_log.py              # Background client: persist onchain block to Supabase
   routes/certificates.py      # /v1/preview + /v1/certificates + /health
   providers/                  # alchemy, moralis, zerion, edge_scoring, quota, cache
 supabase/functions/           # Edge Functions (scoring, payment-log, onchain) + _shared
+integrations/virtuals-acp/    # ACP serve handlers (marketplace adapter)
 agent/registration.json       # ERC-8004 registration document
 docs/                         # Deployment guide + certificate business docs + schemas
 scripts/                      # register / set_agent_uri / pin metadata / x402 buyer / e2e / verify_certificate

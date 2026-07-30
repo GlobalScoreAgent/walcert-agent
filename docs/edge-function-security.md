@@ -81,6 +81,36 @@ Cliente ──► Agente (VPS) ──► Edge Function (scoring)
 | HTTPS only | TLS obligatorio en producción |
 | Sin http:// en prod | El agente solo debe llamar `https://…` |
 
+### 8. Canal interno de marketplaces (agente, no Edge)
+
+Los adapters (Virtuals ACP, Olas, …) **no** llaman a la Edge: llaman al agente con un
+secret distinto de `EDGE_SHARED_SECRET`.
+
+| Requisito | Detalle |
+|-----------|---------|
+| Secret | `WALCERT_INTERNAL_API_KEY` en el agente (+ mismo valor en el adapter) |
+| Headers | `Authorization: Bearer …`, `X-Walcert-Marketplace: <slug>`, opcional `X-Walcert-Access-Channel: internal` |
+| Allowlist | `WALCERT_INTERNAL_MARKETPLACES` (default incluye `virtuals_acp`) |
+| Paywall | Bypass x402 en `POST /v1/certificates/*` solo si el Bearer es válido |
+| Atribución BD | Edge persiste `access_channel` / `marketplace` / `billing` en `walcert.certificate_requests` (meta `_walcert_access` en el body agente→Edge) |
+| Fallo | Claim interno inválido → **401** (no degradar a x402) |
+
+### 8b. Canal Summit BSG2026 (agente, no Edge)
+
+Landing del evento (`bsg2026`): certificados full **sin x402**, con key **dedicada** distinta de `WALCERT_INTERNAL_API_KEY`. Caduca el **1 ago 2026**.
+
+| Requisito | Detalle |
+|-----------|---------|
+| Secret | `WALCERT_SUMMIT_API_KEY` (solo server-side de la landing + agente) |
+| Headers | `Authorization: Bearer …`, `X-Walcert-Marketplace: bsg2026` |
+| Paywall | Bypass x402 si Bearer Summit válido y canal no caducado |
+| Atribución | `access_channel=summit`, `marketplace=bsg2026`, `billing=free` |
+| Caducidad | `WALCERT_SUMMIT_EXPIRES_AT` → **403**; kill switch `WALCERT_SUMMIT_ENABLED` |
+| Rate limit | Dual: **12 req/wallet/15 min** + **500 req/IP/15 min** (IP = egress Vercel) → **429** |
+| Aislamiento | No reutilizar la key de marketplaces; no listar `bsg2026` en `WALCERT_INTERNAL_MARKETPLACES` |
+
+Detalle ops: [bsg2026-summit.md](bsg2026-summit.md).
+
 ---
 
 ## Requisitos recomendados (refuerzo)

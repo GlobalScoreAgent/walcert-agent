@@ -19,102 +19,194 @@ Escala común de notas:
 | D | Débil | Señales de riesgo o poca trayectoria |
 | F | Deficiente / Alto riesgo | Riesgo grave (p. ej. sanciones/mixer) o sin actividad |
 
+**Fórmulas en prod (2026-07-27):**
+
+| Tipo | `formula_version` | Cert `version` | Canal |
+|------|-------------------|----------------|-------|
+| Origins | `origins-v2.2` | `2.0` | público + Summit |
+| Activity | `activity-v2.1` | `2.0` | público + Summit |
+| Multichain | `multichain-v1.5` | `1.5` | público + Summit |
+| Multichain v2 | `multichain-v2.1` | `2.0` | **solo Summit** |
+| Portfolio | `portfolio-v2.2` | `2.0` | público + Summit |
+
 ---
 
 ## 1. Origins — Origen de los fondos
 
 **Qué evalúa:** de dónde provienen los fondos de la wallet y qué tan limpio/diverso es ese origen.
 
+**Versión:** `origins-v2.2` (certificado `version: "2.0"`). Edge canónico: `main_origin_type` = argmax de categorías; HHI/top1 sobre inflows **priced**; `priced_coverage_pct` sobre inflows **value-relevant** (native/ERC-20 amount>0; NFTs fuera del denominador); concentración extrema bloquea A/B.
+
 **Fuentes de datos:**
-- Transferencias entrantes y primer *funding* de la wallet (Alchemy, en Celo y BNB).
-- Etiquetado de las direcciones remitentes contra las tablas `wallets.cex_addresses`, `wallets.bridge_addresses`, `wallets.mixer_addresses` y `wallets.ofac_sanction_addresses` (vía la función `walcert_lookup_labels`).
+- Hasta **500 transferencias entrantes por red** (Alchemy, orden ascendente histórico).
+- Redes = `erc_8004.chains` con `is_active` y `subdomain_alchemy` (fallback: `ALCHEMY_NETWORKS`).
+- Pricing USD: DefiLlama histórico (majors), stables = $1, spot DexScreener, o `null`.
+- Labels vía `walcert_lookup_labels` (CEX / bridge / mixer / OFAC).
 
-**Métricas principales:**
-- `cex_percentage`: porcentaje del valor recibido desde exchanges centralizados.
-- `bridge_percentage`: porcentaje recibido desde bridges.
-- `unique_senders`: cantidad de remitentes distintos (diversidad).
-- `mixing_risk`: `low` / `medium` / `high` (interacción con mixers o remitente único).
-- `first_funding_age_days`: antigüedad del primer financiamiento.
-- `sanctions_hit`: coincidencia con dirección sancionada (OFAC).
+**Flujo (prod):** el agente enriquece `analysis` (Alchemy + DefiLlama) → Edge `walcert-certificate-origins` aplica labels + 9 señales + nota. Edge **no** llama Alchemy ni DefiLlama.
 
-**Reglas de nota (resumen):**
-- **F:** coincidencia OFAC, o `mixing_risk = high`.
-- **A:** `cex ≤ 40%`, `unique_senders ≥ 10`, `mixing = low` y antigüedad ≥ 365 días.
-- **B:** `cex ≤ 70%`, `unique_senders ≥ 5` y `mixing = low`.
-- **D:** `mixing = medium`, o alta dependencia de CEX con muy baja diversidad.
-- **C:** resto de los casos.
+**Señales (9) — valores en `certificate.details`:**
+
+| # | Señal | Campo |
+|---|--------|--------|
+| 1 | % por categoría (CEX, bridge, mixer, OFAC, airdrop, orgánico…) | `category_percentages` |
+| 2 | Remitentes únicos | `unique_senders` |
+| 3 | Concentración HHI (USD priced) | `hhi` |
+| 4 | Top-1 / top-3 share | `concentration` |
+| 5 | Calidad de CEX | `cex_quality` |
+| 6 | Patrón temporal de funding | `temporal_funding` |
+| 7 | Exposición mixer / OFAC | `direct_exposure`, `mixing_risk`, `sanctions_hit` |
+| 8 | Orgánico vs sintético (NFT / airdrop) | `organic_vs_synthetic` |
+| 9 | Antigüedad del primer funding | `first_funding_age_days` |
+
+**Coverage value-relevant (v2.2):** inflows `external`/`erc20` con `amount > 0` (excluye NFT y amount=0). Campos: `value_relevant_inflows`, `value_relevant_priced`, `value_relevant_unpriced`, `priced_coverage_pct`, `hhi_value_relevant_priced`. El **grade** usa HHI/top1 sobre USD priced; el summary explica coverage sobre el denominador value-relevant.
+
+**Campos legacy (compatibilidad):** `main_origin_type`, `cex_percentage`, `bridge_percentage`.
+
+**Explicabilidad (raíz del certificado):** `formula_version: "origins-v2.2"`, `grade_breakdown` (regla aplicada + condiciones), `inputs_hash`. El agente sincroniza `analysis.origin_summary` desde el certificado tras Edge.
+
+**Pricing USD (agente):** `stable` ($1), `historical` (DefiLlama por día UTC), `spot` (DexScreener), `none` (`usd: null`, excluido de % y HHI). Contadores: `priced_inflows`, `unpriced_inflows`, `total_value_usd_priced`.
+
+**Reglas de nota (`subject_type` default `entity`, orden F→A→B→D→C):**
+- **F:** OFAC o `mixing_risk = high`.
+- **A:** `cex ≤ 40%`, `unique_senders ≥ 10`, `mixing = low`, antigüedad ≥ 365 días, **`top1_pct ≤ 60`**, **`hhi ≤ 0.55`**.
+- **B:** `cex ≤ 70%`, `unique_senders ≥ 5`, `mixing = low`, **`top1_pct ≤ 80`**, **`hhi ≤ 0.70`**.
+- **D:** `mixing = medium`, o CEX > 85% con ≤ 2 senders, o **`top1_pct ≥ 95`**, o **`hhi ≥ 0.90`**.
+- **C:** resto.
+
+**Narrativa:** concern si `top1 ≥ 70%` o `hhi ≥ 0.70`. Strength de diversidad de senders solo si HHI ≤ 0.55.
+
+**Fuera de alcance (v2):** multi-hop, Sepolia/IPFS ORIGO, Public API / WAMI.
 
 ---
 
 ## 2. Activity — Actividad reciente
 
-**Qué evalúa:** el comportamiento reciente (ventana de ~7 días): con quién opera, si hay señales de *wash trading* o patrones circulares, y exposición a CEX/mixers/OFAC.
+**Qué evalúa:** el comportamiento reciente (ventana de **15 días**): con quién opera, concentración, wash/circular, bot-like, y exposición a CEX/mixers/OFAC.
+
+**Versión:** `activity-v2.1` (certificado `version: "2.0"`). Ventana **15 días**. HHI>0.70 → D; 0.45–0.70 bloquea A/B (cae en C).
+
+**Flujo (prod):** el agente enriquece `analysis` (Alchemy 15d in+out + DefiLlama) → Edge `walcert-certificate-activity` aplica labels + señales + nota. Edge **no** llama Alchemy ni DefiLlama.
 
 **Fuentes de datos:**
-- Transferencias recientes y contrapartes (Alchemy).
-- Etiquetado de contrapartes contra las mismas tablas de `wallets.*`.
-- Heurística de *wash trading* / patrones circulares calculada dentro de la Edge Function a partir de la serie de transferencias (pares bidireccionales, ping-pong temporal y ciclos A→B→A).
+- Hasta **500 transferencias por dirección (in|out) y por red** (Alchemy, orden desc).
+- Redes = `erc_8004.chains` con Alchemy (fallback `ALCHEMY_NETWORKS`), igual que Origins.
+- Pricing USD híbrido: HHI / net-gross en USD priced; CEX reporta `% valor` y `% txs`.
+- Labels vía `walcert_lookup_labels` (CEX / bridge / mixer / OFAC).
 
-**Métricas principales:**
-- `unique_counterparties`: contrapartes distintas.
-- `cex_interaction_percentage`: proporción de operaciones con CEX.
-- `wash_trading_risk`: `low` / `medium` / `high`.
-- `circular_patterns`: booleano (ciclos/ping-pong detectados).
-- `bidirectional_pair_share`: cuota de volumen en pares bidireccionales.
-- `sanctions_hit`, `mixer_hit`.
+**Señales (en `certificate.details`):**
+1. `unique_counterparties`
+2. `counterparty_hhi`
+3. `cex_interaction_pct_value` + `cex_interaction_pct_txs` (+ legacy `cex_interaction_percentage`)
+4. `reciprocity_ratio`
+5. `net_to_gross_ratio`
+6. `velocity_txs_per_day`
+7. `burstiness_score`
+8. `token_diversity`
+9. `wash_trading_risk` / `circular_patterns` / `wash_score`
+10. `bot_like_score`
+11. `nft_transfer_pct` / `fungible_transfer_pct` / `nft_vs_fungible_ratio`
 
-**Reglas de nota (resumen):**
-- **F:** coincidencia OFAC, o `wash_trading_risk = high`.
-- **D:** patrones circulares con riesgo medio, o interacción con mixer, o `unique_counterparties < 3`, o `cex > 60%`.
-- **A:** `unique_counterparties ≥ 25`, `wash = low` y sin patrones circulares.
-- **B:** `unique_counterparties ≥ 12` y `wash = low`.
-- **C:** resto de los casos.
+**Explicabilidad:** `formula_version: "activity-v2.1"`, `grade_breakdown`, `inputs_hash`.
+
+**Reglas de nota (orden F→D→A→B→C):**
+- **F:** OFAC, wash high, `bot_like ≥ 0.8`, o `wash_score ≥ 0.75`.
+- **D:** mixer, circular+wash medium, unique &lt; 3, CEX &gt; 60%, **HHI &gt; 0.70**, o bot ≥ 0.55.
+- **A:** unique ≥ 25, wash low, sin circular, HHI ≤ 0.25, bot &lt; 0.35, velocity ≤ 40 txs/día.
+- **B:** unique ≥ 12, wash low, HHI ≤ 0.35, bot &lt; 0.5.
+- **C:** resto (incl. `0.45 < HHI ≤ 0.70` si no aplica otra regla).
+
+**Narrativa:** strength “diversidad de contrapartes” solo si unique ≥ 10 **y** HHI ≤ 0.35; concern si HHI > 0.45 (concentración de volumen).
+
+**Fuera de alcance:** ventanas 30/90d; labels DEX routers / known bots (sin catálogo aún).
 
 ---
 
 ## 3. Multi-Chain — Presencia multi-red
 
-**Qué evalúa:** en cuántas redes opera la wallet y por cuánto tiempo (consistencia y longevidad multi-cadena).
+**Qué evalúa:** footprint y longevidad multi-red (no intensidad — Moralis no da txs/volumen por chain).
+
+**Versión:** `multichain-v1.5` (certificado `version: "1.5"`).
+
+**Flujo (prod):** el agente enriquece `analysis` (Moralis + merge Celo opcional) → Edge `walcert-certificate-multichain` recomputa señales desde `chains[]` (canónico) + grade.
 
 **Fuentes de datos:**
-- Cadenas activas y ventana temporal de actividad (Moralis `getWalletActiveChains`).
-- Actividad en **Celo** aportada por Alchemy y fusionada al resultado (Celo no está en Moralis).
+- Moralis `GET /wallets/{address}/chains` (misma llamada que v1).
+- **Celo** vía Alchemy cuando falta en Moralis.
+- Lista core versionada (`CORE_ECOSYSTEM_LIST_VERSION`): eth, base, celo, arbitrum, optimism, polygon.
 
-**Métricas principales:**
-- `total_chains_with_activity`: número de redes con actividad real.
-- `activity_span_days`: días entre la primera y la última actividad.
-- `main_chains`: principales redes detectadas.
+**Señales (en `certificate.details`):** chain count, span global, activas 30d/90d, dormant ratio, consistency, recency, core ecosystems, footprint concentration (HHI de span_days), flags de longevidad por chain. Legacy: `main_chains`, `total_chains_with_activity`, `activity_span_days`.
 
-**Reglas de nota (resumen):**
-- **A:** ≥ 4 redes y span ≥ 365 días.
-- **B:** ≥ 3 redes y span ≥ 180 días.
-- **C:** ≥ 2 redes.
-- **D:** 1 red con span ≥ 30 días.
-- **F:** sin actividad multi-red significativa.
+**Explicabilidad:** `formula_version: "multichain-v1.5"`, `grade_breakdown`, `inputs_hash`.
+
+**Reglas de nota (orden F→D→A→B→C):**
+- **F:** 0 chains, o 1 chain con span &lt; 30d, o 1 chain sin actividad 90d y span &lt; 90d.
+- **D:** 1 chain, o mayormente dormidas (dormant_ratio &gt; 0.75 y sin 30d), o 2 chains con span/consistency débiles.
+- **A:** ≥4 chains, span ≥365, consistency ≥0.50, ≥2 core, ≥2 activas en 90d, HHI footprint ≤0.70, recency ≥0.35.
+- **B:** ≥3 chains, span ≥180, ≥1 core, consistency ≥0.40, ≥1 activa en 90d.
+- **C:** resto.
+
+**Fuera de alcance (endpoint público):** intensidad GoldRush (ver Multichain v2 Summit abajo).
+
+### Solo Summit — Multichain v2 (GoldRush)
+
+**No es endpoint público del agente** (no agent card, no x402). Requiere auth Summit.
+
+```http
+POST /v1/summit/certificates/multichain-v2
+Authorization: Bearer <WALCERT_SUMMIT_API_KEY>
+X-Walcert-Marketplace: bsg2026
+```
+
+**Versión:** `multichain-v2.1` (certificado `version: "2.0"`, `type: MULTICHAIN`).
+
+**Datos:** GoldRush `/activity/` + `transactions_summary` en top 6 mainnets prioritarios (`GOLDRUSH_API_KEY` en env EC2).
+
+**Señales:** footprint (mainnets, span, recency, consistency, dormant, core) + intensity (`total_tx_count`, `tx_hhi`, weighted activity, primary chain, gas). `ecosystem_count` = familias de chain (`eth/base/arb/op → ethereum`, etc.), no `category_label` crudo.
+
+**Reglas de nota (orden F→D→A→B→C):**
+- **F:** 0 mainnets, solo testnets, o 1 mainnet con span &lt; 30 y total_tx &lt; 5.
+- **D:** 1 mainnet, o (dormant_ratio &gt; 0.75 y active_30d = 0), o total_tx = 0 en sample.
+- **A:** mainnets ≥ 5, ecosystems ≥ 3, span ≥ 365, consistency ≥ 0.50, recency ≥ 0.35, core ≥ 2, total_tx ≥ 50, tx_hhi ≤ 0.70.
+- **B:** mainnets ≥ 3, ecosystems ≥ 2, span ≥ 180, consistency ≥ 0.40, total_tx ≥ 15.
+- **C:** resto.
+
+**Sin Summit:** HTTP 403 `summit_only`.
 
 ---
 
 ## 4. Portfolio — Composición del portafolio
 
-**Qué evalúa:** la calidad de la cartera actual: tamaño, liquidez, diversificación y exposición especulativa.
+**Qué evalúa:** calidad económica de la cartera actual: tamaño, liquidez, diversificación, higiene de dust y exposición especulativa / DeFi.
+
+**Versión:** `portfolio-v2.2` (certificado `version: "2.0"`). Summary usa `total_value_usd_credible` (excluye valuaciones absurdas >$50M); raw post-filtro permanece en `details`.
+
+**Flujo (prod):** el agente enriquece `analysis` (Zerion + classify) → Edge `walcert-certificate-portfolio` recomputa señales desde `positions[]` (canónico) + grade.
 
 **Fuentes de datos:**
-- Posiciones del portafolio (Zerion), incluyendo tokens, stablecoins, bluechips y posiciones DeFi/LP.
+- Zerion `GET /wallets/{address}/positions`.
+- Listas versionadas (`TOKEN_TIER_LIST_VERSION`, p.ej. `2026-07-26`): STABLE / BLUECHIP / HIGH_RISK / NATIVE_GAS (+ protocolos bluechip).
 
-**Métricas principales:**
-- `total_value_usd`: valor total estimado.
-- `liquid_ratio`: porcentaje líquido (no bloqueado).
-- `category_distribution`: distribución por categoría (stablecoin, bluechip, defi_lp, meme_or_other).
-- `concentration`: `top1_share` (peso del mayor activo) y `hhi` (índice Herfindahl-Hirschman).
-- `defi_exposure_pct`: exposición a DeFi/LP.
-- `dust_filtered_count` / `spam_filtered_count`: posiciones descartadas por polvo o spam/sin precio.
+**Señales (en `certificate.details`):** valor total usable, liquid/locked + `liquid_ratio`, `holdings_hhi`, `effective_positions`, shares stable/bluechip/meme, split DeFi/LP, `dust_ratio`, `protocol_exposure_count`, `native_gas_buffer_*`, `locked_commitment_score`, counts dust/spam.
 
-**Reglas de nota (resumen):**
-- **F:** valor < $10, o cartera dominada por memes (> 85%) con valor < $500.
-- **D:** valor < $100, o memes > 70%, o concentración top-1 > 0,92.
-- **A:** valor ≥ $10.000, líquido ≥ 60%, memes ≤ 15%, top-1 ≤ 0,55 y HHI ≤ 0,4.
-- **B:** valor ≥ $2.000, líquido ≥ 50%, memes ≤ 30% y top-1 ≤ 0,7.
-- **C:** resto de los casos.
+**Dual totals (v2.2):**
+- `total_value_usd` / `liquid_value_usd` = post spam/dust (usable).
+- `total_value_usd_credible` / `liquid_value_usd_credible` = excluye valuaciones **absurdas** (`value > $50M`, o extremo vs mediana si hay ≥2 posiciones).
+- Summary Summit usa **credible**; si credible = 0, dice “unavailable” y menciona raw solo como post-filter.
+- Campos: `absurd_filtered_count`, `absurd_value_usd_excluded`, `positions_credible`.
+
+**Umbrales:** dust `< $1`; posición efectiva = `value_usd ≥ max($10, 1% del total)`.
+
+**Explicabilidad:** `formula_version: "portfolio-v2.2"`, `grade_breakdown`, `inputs_hash`. Grade sobre universo **usable** (no cambia por filtro absurd de display).
+
+**Reglas de nota (orden F→D→A→B→C):**
+- **F:** total &lt; $10, o (meme &gt; 85% y total &lt; $500), o `effective_positions == 0`.
+- **D:** total &lt; $100, o meme &gt; 70%, o HHI &gt; 0,70, o dust_ratio &gt; 0,50, o (effective ≤ 1 y total &lt; $1k), o **spam_dominated** (`spam_filtered ≥ 50` y `positions_used ≤ 1`).
+- **A:** total ≥ $10k, líquido ≥ 60%, HHI ≤ 0,35, meme ≤ 15%, effective ≥ 5, top1 ≤ 0,55, **spam_ratio &lt; 0.8**.
+- **B:** total ≥ $2k, líquido ≥ 50%, HHI ≤ 0,50, meme ≤ 30%, effective ≥ 3, **spam_ratio &lt; 0.8**.
+- **C:** resto.
+
+**Fuera de alcance:** histórico/snapshots, PnL, cambio de proveedor, motor risk-tier más allá de listas versionadas.
 
 ---
 
@@ -151,6 +243,9 @@ Los certificados pagados (`POST /v1/certificates/*`) agregan dos campos después
 - **`signature`** — firma EIP-712 de la wallet del agente sobre el `data_hash`. Cualquiera puede recuperar el firmante y confirmar que coincide con `signature.signer`. Autenticidad instantánea y sin gas.
 - **`onchain`** — anclaje por certificado en el ERC-8004 Reputation Registry de Celo (`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`). Por cada emisión el agente llama `giveFeedback` desde una wallet monitor dedicada (distinta al owner del agente). El `feedbackHash` transporta el `data_hash` (prueba on-chain de emisión) y `value`/`value_decimals` el monto pagado, de modo que `getSummary(agentId, "certificate_issued")` devuelve a la vez el conteo de certificados y los ingresos acumulados. Si el anclaje falla, `onchain.status = "failed"` y el certificado igual se entrega firmado.
 
-Verificación independiente: `python scripts/verify_certificate.py <cert.json>` recupera el firmante EIP-712 y confirma el evento `NewFeedback` con `feedbackHash == data_hash`.
+Verificación independiente:
+
+- **HTTP (canónica):** `POST /v1/verify` con `{ "tx_hash": "0x..." }`. El agente es fachada; la Edge `walcert-certificate-verify` hace lookup en BD + confirma `NewFeedback` en Celo + EIP-712.
+- **CLI (offline):** `python scripts/verify_certificate.py <cert.json>` recupera el firmante EIP-712 y confirma el evento `NewFeedback` con `feedbackHash == data_hash`.
 
 Ver también: [certificate-json-schemas.md](certificate-json-schemas.md) y [edge-function-security.md](edge-function-security.md).

@@ -1,9 +1,10 @@
 # Walcert — JSON por certificado
 
-Documento de referencia de los payloads HTTP del agente en la fase actual (hot analysis, sin x402 ni Edge).
+Documento de referencia de los payloads HTTP del agente (hot analysis + Edge scoring).
 
-**Base URL (dev):** `http://127.0.0.1:8001`  
-**Método:** `POST /v1/certificates/{certificate_type}`
+**Base URL (prod):** `https://walcert.globalscoreagent.com`  
+**Método:** `POST /v1/certificates/{certificate_type}` (x402 o canal Summit/interno)  
+**Preview:** `POST /v1/preview/{certificate_type}` (solo `origins` / `activity`)
 
 `certificate_type` ∈ `origins` | `activity` | `multichain` | `portfolio`
 
@@ -21,9 +22,7 @@ Documento de referencia de los payloads HTTP del agente en la fase actual (hot a
 
 ## Envelope de éxito (HTTP 200)
 
-El agente responde siempre con este envoltorio. El detalle del módulo va en `analysis`.
-
-Ese objeto `analysis` es el JSON **semicrudo** que, en la siguiente fase, se enviará a la Edge Function de scoring.
+El agente responde con este envoltorio. `analysis` es el JSON enriquecido por el provider (+ pricing en Origins). `certificate` es el resultado del scoring Edge (nota A–F + métricas).
 
 ```json
 {
@@ -32,7 +31,8 @@ Ese objeto `analysis` es el JSON **semicrudo** que, en la siguiente fase, se env
   "mode": "hot",
   "certificate_type": "<origins|activity|multichain|portfolio>",
   "provider": "<alchemy|moralis|zerion>",
-  "analysis": { }
+  "analysis": { },
+  "certificate": { }
 }
 ```
 
@@ -47,7 +47,7 @@ Ese objeto `analysis` es el JSON **semicrudo** que, en la siguiente fase, se env
 
 ## 1. Origins (`POST /v1/certificates/origins`)
 
-Provider: Alchemy (`celo-mainnet` + `bnb-mainnet`).
+Provider: Alchemy (networks from `erc_8004.chains` where `is_active` + `subdomain_alchemy`; fallback `ALCHEMY_NETWORKS`). Up to **500 transfers/network**. USD via DefiLlama / stables / spot. Edge formula `origins-v2.2`.
 
 ```json
 {
@@ -58,69 +58,122 @@ Provider: Alchemy (`celo-mainnet` + `bnb-mainnet`).
   "provider": "alchemy",
   "analysis": {
     "module": "origins",
+    "version": "2.0",
     "wallet": "0x2efc66c0a78620dd254443998bf2f11b685602e3",
-    "chains_analyzed": [
+    "networks": ["eth-mainnet", "base-mainnet", "celo-mainnet", "bnb-mainnet"],
+    "analyzed_at": "2026-07-26T22:00:00Z",
+    "total_transfers_analyzed": 820,
+    "total_inflows": 800,
+    "priced_inflows": 640,
+    "unpriced_inflows": 160,
+    "total_value_usd_priced": 12540.2,
+    "selection": { "order": "asc", "max_per_network": 500, "formula_hint": "origins-v2.2" },
+    "inflows": [
       {
-        "chain": "celo",
-        "chain_id": 42220,
-        "network": "celo-mainnet",
-        "transfers": 2
-      },
-      {
-        "chain": "bsc",
-        "chain_id": 56,
-        "network": "bnb-mainnet",
-        "transfers": 12
+        "from": "0x28c6c06298d514db089934071355e5743bf21d60",
+        "usd": 1250.4,
+        "usd_method": "historical",
+        "amount": 0.42,
+        "ts": "2024-03-12T09:14:22Z",
+        "asset_category": "external",
+        "symbol": "ETH",
+        "contract": null,
+        "chain_id": 1
       }
     ],
-    "networks": ["celo-mainnet", "bnb-mainnet"],
-    "analyzed_at": "2026-07-17T19:45:00Z",
-    "total_transfers_analyzed": 14,
-    "first_funding": {
-      "timestamp": "2024-03-12T09:14:22Z",
-      "from": "0x28c6c06298d514db089934071355e5743bf21d60",
-      "value_usd_estimate": 1250.4,
-      "category": "cex",
-      "label": "Binance",
-      "chain": "bsc",
-      "chain_id": 56
+    "first_funding": {},
+    "origin_summary": {},
+    "top_senders": [],
+    "senders": [],
+    "score_inputs": {}
+  },
+  "certificate": {
+    "type": "ORIGINS",
+    "version": "2.0",
+    "formula_version": "origins-v2.2",
+    "grade": "B",
+    "grade_breakdown": {
+      "formula_version": "origins-v2.2",
+      "subject_type": "entity",
+      "applied_rule": "B",
+      "grade": "B",
+      "inputs": {},
+      "rules_evaluated": []
     },
-    "origin_summary": {
-      "cex_percentage": 68.5,
-      "bridge_percentage": 12.3,
-      "dex_percentage": 9.1,
-      "other_percentage": 10.1,
-      "unique_senders": 14,
+    "inputs_hash": "0x...",
+    "details": {
+      "main_origin_type": "cex",
+      "cex_percentage": 42.1,
+      "bridge_percentage": 10.0,
+      "unique_senders": 18,
       "mixing_risk": "low",
-      "main_origin_type": "cex"
-    },
-    "top_senders": [
-      {
-        "address": "0x28c6c06298d514db089934071355e5743bf21d60",
-        "label": "Binance",
-        "total_value_usd": 1840.2,
-        "tx_count": 3
-      }
-    ],
-    "score_inputs": {
-      "cex_dependency": 0.68,
-      "sender_diversity": 0.72,
-      "mixing_signals": 0.15
+      "first_funding_age_days": 820,
+      "sanctions_hit": false,
+      "hhi": 0.18,
+      "concentration": {
+        "top1_pct": 28.0,
+        "top3_pct": 55.0,
+        "top1_share": 0.28,
+        "top3_share": 0.55
+      },
+      "category_percentages": {
+        "cex": 42.1,
+        "bridge": 10.0,
+        "mixer": 0,
+        "ofac": 0,
+        "airdrop": 0,
+        "synthetic": 0,
+        "organic": 30.0,
+        "unknown": 17.9,
+        "dex": 0
+      },
+      "cex_quality": {
+        "regulated_high_quality_usd": 0,
+        "high_risk_usd": 0,
+        "standard_usd": 0,
+        "unknown_usd": 0
+      },
+      "temporal_funding": {
+        "pattern": "gradual",
+        "span_days": 120.5,
+        "median_gap_hours": 36.0,
+        "burst_score": 0.12
+      },
+      "direct_exposure": {
+        "mixer_hits": 0,
+        "ofac_hits": 0,
+        "sanctions_hit": false,
+        "mixing_risk": "low"
+      },
+      "organic_vs_synthetic": {
+        "labeled": 40,
+        "synthetic_nft": 2,
+        "synthetic_airdrop_reward": 1,
+        "organic_or_unknown": 50,
+        "unknown": 7
+      },
+      "formula_version": "origins-v2.2",
+      "priced_inflows": 640,
+      "unpriced_inflows": 160,
+      "total_value_usd_priced": 12540.2
     }
   }
 }
 ```
 
-Notas:
+Notes:
 
-- `first_funding` puede ser `null` si no hay transfers con timestamp usable.
-- `chains_analyzed` solo lista redes con transfers encontrados.
+- Las **9 señales** viven en `certificate.details` (tabla arriba en docs de certificados).
+- `inflows[].usd` puede ser `null` (`usd_method: none`); % y HHI usan solo filas con `usd > 0`.
+- `usd_method` ∈ `stable` | `historical` | `spot` | `none` (y `alchemy` solo si hay fiat explícito).
+- `chains_analyzed` lista redes con transfers hallados (lista dinámica vía Edge `walcert-alchemy-networks` / `erc_8004.chains`).
+- Legacy `origin_summary` / `senders` / `top_senders` siguen poblados por compatibilidad.
 
 ---
 
 ## 2. Activity (`POST /v1/certificates/activity`)
 
-Provider: Alchemy (ventana ~7 días, Celo + BNB).
+Provider: Alchemy (ventana **15 días**, redes desde `erc_8004.chains`; ≤500 txs/dir/red). USD vía DefiLlama. Edge formula `activity-v2.1`.
 
 ```json
 {
@@ -131,51 +184,61 @@ Provider: Alchemy (ventana ~7 días, Celo + BNB).
   "provider": "alchemy",
   "analysis": {
     "module": "activity",
+    "version": "2.0",
     "wallet": "0x2efc66c0a78620dd254443998bf2f11b685602e3",
-    "chains_analyzed": [
+    "window_days": 15,
+    "total_transfers": 94,
+    "unique_counterparties": 27,
+    "counterparty_hhi": 0.18,
+    "reciprocity_ratio": 0.12,
+    "net_to_gross_ratio": 0.41,
+    "velocity_txs_per_day": 6.3,
+    "burstiness_score": 0.22,
+    "token_diversity": 8,
+    "bot_like_score": 0.15,
+    "nft_transfer_pct": 5.0,
+    "fungible_transfer_pct": 95.0,
+    "selection": { "order": "desc", "window_days": 15, "max_per_direction": 500, "truncated": false, "formula_hint": "activity-v2.1" },
+    "transfers": [
       {
-        "chain": "celo",
-        "chain_id": 42220,
-        "network": "celo-mainnet",
-        "transfers": 5
+        "ts": "2026-07-20T12:00:00Z",
+        "from": "0x...",
+        "to": "0x...",
+        "value_usd": 120.5,
+        "usd_method": "historical",
+        "asset_category": "external",
+        "chain_id": 8453
       }
-    ],
-    "networks": ["celo-mainnet", "bnb-mainnet"],
-    "analyzed_at": "2026-07-17T19:45:00Z",
-    "window_days": 7,
-    "total_transfers": 5,
-    "inflow_count": 2,
-    "outflow_count": 3,
-    "unique_counterparties": 3,
-    "cex_interaction_percentage": 0.0,
-    "behavior_signals": {
-      "wash_trading_risk": "low",
-      "circular_patterns": false,
-      "bot_like_activity": false,
-      "high_frequency_trading": false
-    },
-    "top_counterparties": [
-      {
-        "address": "0x2c8b1d651e5ae42dec1c7b238989e8e369241665",
-        "tx_count": 3,
-        "direction": "out",
-        "label": null
-      }
-    ],
-    "score_inputs": {
-      "counterparty_diversity": 0.1,
-      "cex_dependency": 0.0,
-      "natural_flow_score": 0.55
+    ]
+  },
+  "certificate": {
+    "type": "ACTIVITY",
+    "version": "2.0",
+    "formula_version": "activity-v2.1",
+    "grade": "B",
+    "grade_breakdown": {},
+    "inputs_hash": "0x...",
+    "details": {
+      "window_days": 15,
+      "unique_counterparties": 27,
+      "counterparty_hhi": 0.18,
+      "cex_interaction_pct_value": 22.4,
+      "cex_interaction_pct_txs": 31.0,
+      "wash_score": 0.12,
+      "bot_like_score": 0.15,
+      "nft_vs_fungible_ratio": 0.05
     }
   }
 }
 ```
 
+Notes: las 11 señales viven en `certificate.details`; `selection.truncated` indica si se agotó el page cap antes del cutoff.
+
 ---
 
 ## 3. Multi-Chain (`POST /v1/certificates/multichain`)
 
-Provider: Moralis (`GET /wallets/{address}/chains`).
+Provider: Moralis (`GET /wallets/{address}/chains`). Edge formula `multichain-v1.5`. Celo merge via Alchemy when missing.
 
 ```json
 {
@@ -186,34 +249,62 @@ Provider: Moralis (`GET /wallets/{address}/chains`).
   "provider": "moralis",
   "analysis": {
     "module": "multichain",
+    "version": "1.5",
+    "formula_hint": "multichain-v1.5",
+    "core_ecosystem_list_version": "2026-07-26",
     "wallet": "0x2efc66c0a78620dd254443998bf2f11b685602e3",
-    "analyzed_at": "2026-07-17T19:45:00Z",
-    "total_chains_with_activity": 6,
+    "analyzed_at": "2026-07-26T19:45:00Z",
+    "total_chains": 4,
+    "total_chains_with_activity": 4,
+    "activity_span_days": 986,
+    "active_chains_30d": 2,
+    "active_chains_90d": 3,
+    "dormant_ratio": 0.25,
+    "consistency_score": 0.68,
+    "recency_score": 0.55,
+    "footprint_concentration": 0.42,
+    "core_ecosystems": ["base", "eth", "polygon"],
+    "core_ecosystem_count": 3,
+    "main_chains": ["eth", "base", "bsc", "polygon"],
     "chains": [
-      {
-        "chain": "eth",
-        "chain_id": 1,
-        "first_transaction": null,
-        "last_transaction": null
-      },
       {
         "chain": "base",
         "chain_id": 8453,
         "first_transaction": "2024-02-18T11:05:44Z",
-        "last_transaction": "2026-07-16T20:12:55Z"
-      },
-      {
-        "chain": "bsc",
-        "chain_id": 56,
-        "first_transaction": "2023-11-04T14:22:11Z",
-        "last_transaction": "2026-07-15T09:41:03Z"
+        "last_transaction": "2026-07-16T20:12:55Z",
+        "span_days": 879,
+        "is_recent_30d": true,
+        "is_recent_90d": true,
+        "is_dormant": false
       }
     ],
-    "activity_span_days": 986,
     "score_inputs": {
-      "chain_count": 6,
-      "activity_consistency": 1.0,
-      "longevity_score": 0.88
+      "chain_count_score": 0.8,
+      "longevity_score": 0.88,
+      "recency_score": 0.55,
+      "consistency_score": 0.68,
+      "core_presence_score": 0.75
+    }
+  },
+  "certificate": {
+    "type": "MULTICHAIN",
+    "version": "1.5",
+    "formula_version": "multichain-v1.5",
+    "grade": "B",
+    "grade_breakdown": {
+      "formula_version": "multichain-v1.5",
+      "subject_type": "entity",
+      "applied_rule": "B",
+      "grade": "B",
+      "inputs": {},
+      "rules_evaluated": []
+    },
+    "inputs_hash": "0x...",
+    "details": {
+      "total_chains_with_activity": 4,
+      "activity_span_days": 986,
+      "active_chains_90d": 3,
+      "core_ecosystems": ["base", "eth", "polygon"]
     }
   }
 }
@@ -222,13 +313,17 @@ Provider: Moralis (`GET /wallets/{address}/chains`).
 Notas:
 
 - Moralis no acepta `celo` en este endpoint; el set default es `eth,base,arbitrum,polygon,optimism,bsc`.
-- `first_transaction` / `last_transaction` pueden ser `null`.
+- Solo se incluyen chains con al menos un timestamp real; `celo_merged: true` si Alchemy añade Celo.
+
+### 3b. Multichain v2 Summit-only (`POST /v1/summit/certificates/multichain-v2`)
+
+Provider: GoldRush. Edge formula `multichain-v2.1`. Auth Summit required (`403 summit_only` otherwise). Certificate `type: MULTICHAIN`, `version: "2.0"`. Details include footprint + intensity (tx counts, HHI, primary chain) and `ecosystem_count` via chain **family map** (not raw category labels). See [bsg2026-summit.md](bsg2026-summit.md).
 
 ---
 
 ## 4. Portfolio (`POST /v1/certificates/portfolio`)
 
-Provider: Zerion (`GET /wallets/{address}/positions/`).
+Provider: Zerion (`GET /wallets/{address}/positions/`). Edge formula `portfolio-v2.2`.
 
 ```json
 {
@@ -239,33 +334,65 @@ Provider: Zerion (`GET /wallets/{address}/positions/`).
   "provider": "zerion",
   "analysis": {
     "module": "portfolio",
+    "version": "2.0",
+    "formula_hint": "portfolio-v2.2",
+    "token_tier_list_version": "2026-07-26",
     "wallet": "0x2efc66c0a78620dd254443998bf2f11b685602e3",
-    "analyzed_at": "2026-07-17T19:45:00Z",
-    "total_value_usd": 0.81,
-    "liquid_value_usd": 0.81,
-    "locked_value_usd": 0.0,
-    "liquid_ratio": 100.0,
-    "positions_count": 1,
+    "analyzed_at": "2026-07-26T19:45:00Z",
+    "total_value_usd": 12480.55,
+    "liquid_value_usd": 9820.3,
+    "locked_value_usd": 2660.25,
+    "liquid_ratio": 78.7,
+    "positions_count": 11,
+    "positions_used": 8,
+    "effective_positions": 7,
+    "holdings_hhi": 0.24,
+    "top1_share": 0.31,
+    "dust_ratio": 0.03,
+    "stablecoin_dominance": 42.5,
+    "bluechip_share": 31.2,
+    "meme_high_risk_share": 7.9,
+    "defi_lp_share": 18.4,
+    "protocol_exposure_count": 4,
+    "native_gas_buffer_usd": 420.0,
+    "native_gas_buffer_pct": 3.4,
+    "locked_commitment_score": 0.213,
     "category_distribution": {
-      "stablecoin": 0.0,
-      "bluechip": 100.0,
-      "defi_lp": 0.0,
-      "meme_or_other": 0.0
+      "stablecoin": 42.5,
+      "bluechip": 31.2,
+      "defi_lp": 18.4,
+      "meme_or_other": 7.9
     },
-    "top_positions": [
-      {
-        "name": "Celo",
-        "symbol": "celo",
-        "value_usd": 0.81,
-        "category": "bluechip",
-        "classification": "liquid"
-      }
-    ],
-    "score_inputs": {
-      "portfolio_size_score": 0.0,
-      "liquidity_score": 1.0,
-      "diversification_score": 0.07,
-      "risk_exposure_score": 1.0
+    "selection": {
+      "positions_cap": 200,
+      "dust_usd": 1.0,
+      "formula_hint": "portfolio-v2.2",
+      "token_tier_list_version": "2026-07-26"
+    },
+    "positions": [],
+    "top_positions": []
+  },
+  "certificate": {
+    "type": "PORTFOLIO",
+    "version": "2.0",
+    "formula_version": "portfolio-v2.2",
+    "grade": "B",
+    "grade_breakdown": {
+      "formula_version": "portfolio-v2.2",
+      "subject_type": "entity",
+      "applied_rule": "B",
+      "grade": "B",
+      "inputs": {},
+      "rules_evaluated": []
+    },
+    "inputs_hash": "0x...",
+    "details": {
+      "total_value_usd": 12480.55,
+      "liquid_ratio": 78.7,
+      "holdings_hhi": 0.24,
+      "effective_positions": 7,
+      "dust_ratio": 0.03,
+      "token_tier_list_version": "2026-07-26"
     }
   }
 }
@@ -344,10 +471,11 @@ La respuesta HTTP del agente incluye `analysis` + `certificate` (grade A–F). V
 
 | Tipo | Campos |
 |------|--------|
-| origins | `senders[]` (cap 1000) con address, chain, value, tx_count |
-| activity | `counterparties[]`, `transfers[]` compacto 7d (`ts,from,to,value,chain`) |
-| multichain | posible `celo_merged: true` si Alchemy añade Celo |
-| portfolio | `positions[]` ricos (sin `only_simple`); Edge aplica dust/HHI/spam/DeFi |
+| origins | `senders[]` (cap 1000); `inflows[]` con amount/usd; `value_relevant_*` + `priced_coverage_pct` (Edge `origins-v2.2`) |
+| activity | `counterparties[]`, `transfers[]` compacto **15d** (`window_days: 15`, formula `activity-v2.1`) |
+| multichain | `chains[]` enriquecidos; Edge `multichain-v1.5` (público) |
+| multichain_v2 | Summit-only GoldRush; Edge `multichain-v2.1` + family map ecosystems |
+| portfolio | `positions[]` ricos; Edge `portfolio-v2.2` + dual totals `*_credible` / absurd filter |
 
 ### Envelope con certificado
 
@@ -407,4 +535,7 @@ Solo en los certificados **pagados** (`POST /v1/certificates/*`). El preview gra
 - **`signature`** (EIP-712): firma de la wallet del agente sobre el `data_hash` y campos clave del certificado. Se verifica recuperando el firmante y comparando con `signature.signer`. Autenticidad instantanea, sin gas.
 - **`onchain`** (ERC-8004 Reputation Registry en Celo): por cada certificado se llama `giveFeedback` desde una wallet monitor dedicada (distinta al owner del `agentId`). El `feedbackHash` transporta el `data_hash` (prueba on-chain de emision) y `value/value_decimals` el monto pagado, de modo que `getSummary(agentId, "certificate_issued")` expone a la vez el conteo de certificados y los ingresos acumulados. Si el anclaje falla, `onchain.status = "failed"` y el certificado igual se entrega firmado.
 
-Verificacion independiente: `python scripts/verify_certificate.py <cert.json>` (recupera el firmante EIP-712 y confirma el evento `NewFeedback` con `feedbackHash == data_hash`).
+Verificacion independiente:
+
+- **HTTP (canonica):** `POST /v1/verify` con `{ "tx_hash": "0x..." }` — Edge `walcert-certificate-verify` (BD + Celo + EIP-712); el agente solo hace de fachada.
+- **CLI (offline):** `python scripts/verify_certificate.py <cert.json>` (recupera el firmante EIP-712 y confirma el evento `NewFeedback` con `feedbackHash == data_hash`).

@@ -57,26 +57,30 @@ payments. Preview of `multichain` / `portfolio` returns 403.
 | `app/agent_card.py` | Bilingual discovery JSON for `GET /` (not a human dashboard) |
 | `app/config.py` | All settings, read from environment |
 | `app/services.py` | Orchestration: providers → edge scoring → certify (sign + anchor) |
-| `app/routes/certificates.py` | `/health`, `/v1/quota`, `/v1/preview/{type}`, `/v1/certificates/{type}` |
+| `app/routes/certificates.py` | `/health`, `/v1/quota`, `/v1/preview/{type}`, `/v1/certificates/{type}`, `/v1/verify` |
 | `app/providers/` | `alchemy`, `moralis`, `zerion`, `edge_scoring`, `quota`, `cache` |
 | `app/payments.py` | x402 paywall install (Celo mainnet) |
 | `app/payment_log.py` | Middleware that logs settled x402 payments |
 | `app/onchain.py` | EIP-712 signing + ERC-8004 `giveFeedback` anchoring |
 | `app/onchain_log.py` | Background client that persists the on-chain block to Supabase |
+| `app/certificate_verify.py` | Thin client for Edge `walcert-certificate-verify` (public `/v1/verify` facade) |
 | `agent/registration.json` | ERC-8004 registration document (pinned to IPFS) |
 
 ### Supabase Edge Functions (must be deployed to the Supabase project)
 
 | Slug | Auth | Purpose |
 |------|------|---------|
-| `walcert-certificate-origins` | Bearer shared secret | Score the `origins` certificate |
-| `walcert-certificate-activity` | Bearer shared secret | Score the `activity` certificate |
-| `walcert-certificate-multichain` | Bearer shared secret | Score the `multichain` certificate |
-| `walcert-certificate-portfolio` | Bearer shared secret | Score the `portfolio` certificate |
+| `walcert-alchemy-networks` | Bearer shared secret | Active Alchemy networks from `erc_8004.chains` (Origins v2) |
+| `walcert-certificate-origins` | Bearer shared secret | Score Origins (`origins-v2.2`, value-relevant coverage + concentration grade) |
+| `walcert-certificate-activity` | Bearer shared secret | Score Activity (`activity-v2.1`, 15d, HHI D@0.70) |
+| `walcert-certificate-multichain` | Bearer shared secret | Score Multichain (`multichain-v1.5`, Moralis footprint) |
+| `walcert-certificate-multichain-v2` | Bearer shared secret | Score Multichain (`multichain-v2.1`, GoldRush, Summit-only) |
+| `walcert-certificate-portfolio` | Bearer shared secret | Score Portfolio (`portfolio-v2.2`, dual totals credible/raw) |
 | `walcert-payment-log` | Bearer shared secret | Persist settled x402 payments (holds service role key) |
 | `walcert-certificate-onchain` | Bearer shared secret | Persist `onchain`/`signature` block to a certificate row |
+| `walcert-certificate-verify` | Bearer shared secret | Public verify brain: DB lookup by `onchain_tx_hash` + Celo `NewFeedback` + EIP-712 |
 
-All six are deployed with **JWT verification disabled** (`--no-verify-jwt`) because they
+These are deployed with **JWT verification disabled** (`--no-verify-jwt`) because they
 use the shared-secret model instead (see §5). Shared code lives under
 `supabase/functions/_shared/` and is copied into each function folder's `_shared/`.
 
@@ -156,6 +160,9 @@ provisioning a **fresh** project, recreate:
   `request_payload` (jsonb), `certificate` (jsonb), `error_message` (text),
   `signature` (jsonb), `onchain` (jsonb), `onchain_tx_hash` (text),
   `onchain_updated_at` (timestamptz), plus an index on `certificate_id`.
+  Attribution (marketplace adapters): `access_channel` (`direct`|`internal`),
+  `marketplace` (text, nullable), `billing` (`x402`|`marketplace`|`free`) —
+  see `supabase/migrations/20260723_certificate_requests_attribution.sql`.
 - `walcert.x402_payments` for settled payments.
 - `walcert.edge_config` (optional secret fallback — prefer Edge secrets instead).
 - `walcert.walcert_lookup_labels(p_addresses text[], p_chains text[])` as a
@@ -182,16 +189,27 @@ Code fallbacks in `supabase/functions/**/_shared/certificate.ts` and agent
 `app/config.py` also default to **9699** / `0xF4D938…AEd095` if those env vars are
 missing — keep secrets, `.env`, and defaults aligned.
 
+Optional for `walcert-certificate-verify` (defaults shown):
+
+```bash
+supabase secrets set \
+  CELO_RPC_URL=https://forno.celo.org \
+  REPUTATION_REGISTRY_ADDRESS=0x8004BAa17C55a88189AE136b182e5fdA19dE9b63 \
+  CELO_CHAIN_ID=42220 \
+  --project-ref <YOUR_PROJECT_REF>
+```
+
 The Supabase **service role key** is injected automatically into functions as
-`SUPABASE_SERVICE_ROLE_KEY`; `walcert-payment-log` and `walcert-certificate-onchain` use it
-to write rows — it never leaves the Edge.
+`SUPABASE_SERVICE_ROLE_KEY`; `walcert-payment-log`, `walcert-certificate-onchain`, and
+`walcert-certificate-verify` use it to read/write rows — it never leaves the Edge.
 
 ### 5.3 Deploy the Edge Functions
 
 ```bash
 for fn in walcert-certificate-origins walcert-certificate-activity \
           walcert-certificate-multichain walcert-certificate-portfolio \
-          walcert-payment-log walcert-certificate-onchain; do
+          walcert-payment-log walcert-certificate-onchain \
+          walcert-certificate-verify; do
   supabase functions deploy "$fn" --no-verify-jwt --project-ref <YOUR_PROJECT_REF>
 done
 ```
@@ -216,9 +234,11 @@ See [.env.example](../.env.example) for the annotated template. Groups:
 | Group | Variables |
 |-------|-----------|
 | Identity | `AGENT_ID` (9699), `AGENT_WALLET` (payTo `0xF4D9…`), `PUBLIC_BASE_URL`, `CELO_CHAIN_ID` |
-| Providers | `ALCHEMY_API_KEY`, `ALCHEMY_NETWORKS`, `MORALIS_API_KEY`, `MORALIS_CHAINS`, `ZERION_API_KEY` |
+| Providers | `ALCHEMY_API_KEY`, `ALCHEMY_NETWORKS`, `MORALIS_API_KEY`, `MORALIS_CHAINS`, `ZERION_API_KEY`, `GOLDRUSH_API_KEY` (Multichain v2 Summit-only) |
 | Edge scoring | `SUPABASE_FUNCTIONS_URL`, `EDGE_SHARED_SECRET`, `EDGE_SCORING_ENABLED` |
 | x402 | `X402_ENABLED`, `X402_NETWORK`, `X402_FACILITATOR_URL`, `X402_FACILITATOR_API_KEY`, `X402_FACILITATOR_AUTH_HEADER`, `X402_PAY_TO`, `X402_PRICE` |
+| Internal marketplaces | `WALCERT_INTERNAL_API_KEY`, `WALCERT_INTERNAL_MARKETPLACES` |
+| Summit BSG2026 | `WALCERT_SUMMIT_API_KEY`, `WALCERT_SUMMIT_ENABLED`, `WALCERT_SUMMIT_EXPIRES_AT`, `WALCERT_SUMMIT_RATE_LIMIT_WALLET` (default 12), `WALCERT_SUMMIT_RATE_LIMIT` (IP backstop, default 500), `WALCERT_SUMMIT_RATE_WINDOW_SECONDS` |
 | Payment logging | `PAYMENT_LOG_ENABLED`, `PAYMENT_LOG_SLUG` |
 | On-chain | `CELO_RPC_URL`, `REPUTATION_REGISTRY_ADDRESS`, `CERT_SIGNING_ENABLED`, `ONCHAIN_ANCHOR_ENABLED`, `AGENT_SIGNER_KEY` (monitor), `CERT_SIGNER_ADDRESS`, `CELO_CONFIRMATION_TIMEOUT`, `ONCHAIN_LOG_ENABLED`, `ONCHAIN_LOG_SLUG` |
 | Cache / HTTP / quota | `CACHE_TTL_SECONDS`, `HTTP_TIMEOUT_SECONDS`, `ALCHEMY_*`, `MORALIS_*`, `ZERION_DAILY_LIMIT` |
@@ -264,12 +284,20 @@ when `ONCHAIN_LOG_ENABLED=true`.
 
 Anyone can verify a certificate independently:
 
+- **HTTP (canonical product path):** `POST /v1/verify` with `{ "tx_hash": "0x..." }`.
+  The FastAPI agent is a thin facade; Edge Function `walcert-certificate-verify`
+  performs the hybrid check (lookup `walcert.certificate_requests` by
+  `onchain_tx_hash` + confirm `NewFeedback` on Celo + EIP-712 recovery). Dashboard
+  / UI clients must call this endpoint — do not reimplement Celo RPC in the web app.
+- **CLI (offline, JSON in hand):**
+
 ```bash
 python scripts/verify_certificate.py path/to/certificate.json
 ```
 
 It recovers the EIP-712 signer and confirms the on-chain `NewFeedback` event with
-`feedbackHash == data_hash`.
+`feedbackHash == data_hash`. Prefer an index on `walcert.certificate_requests(onchain_tx_hash)`
+for verify lookups.
 
 ---
 
