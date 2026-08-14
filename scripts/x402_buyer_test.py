@@ -4,17 +4,18 @@ Flujo:
   1. POST /v1/certificates/{type} sin pago -> espera 402 + payment-required.
   2. Firma la autorizacion EIP-3009 (gasless) con la wallet compradora.
   3. Reintenta con el header X-PAYMENT -> el server verifica y liquida via
-     el facilitador de Celo -> 200 + certificado A-F.
+     el facilitador de esa red (Celo o Base) -> 200 + certificado A-F.
 
 Uso (PowerShell):
-    $env:X402_BUYER_PRIVATE_KEY = "<llave_privada_del_comprador_con_USDC_en_Celo>"
-    # opcional: $env:AGENT_BASE_URL = "http://127.0.0.1:8011"
+    $env:X402_BUYER_PRIVATE_KEY = "<llave_privada del comprador con USDC>"
+    # Celo (default): $env:X402_NETWORK = "eip155:42220"
+    # Base:           $env:X402_NETWORK = "eip155:8453"
     python scripts/x402_buyer_test.py [cert_type] [target_wallet]
 
 Requisitos:
-  - La wallet compradora debe tener >= precio en USDC en Celo mainnet.
-  - El server destino debe correr con X402_ENABLED=true y X402_FACILITATOR_API_KEY
-    (para /settle). El pago es gasless para el comprador.
+  - Wallet compradora con >= precio en USDC en la red elegida.
+  - Server con X402_ENABLED=true. Celo: X402_FACILITATOR_API_KEY.
+    Base: COINBASE_API_KEY_BASE + COINBASE_SECRET_BASE.
 """
 
 from __future__ import annotations
@@ -45,12 +46,14 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 AGENT_BASE_URL = os.getenv("AGENT_BASE_URL", "http://127.0.0.1:8011").rstrip("/")
 NETWORK = os.getenv("X402_NETWORK", "eip155:42220").strip()
 CELO_RPC_URL = os.getenv("CELO_RPC_URL", "https://forno.celo.org")
+BASE_RPC_URL = os.getenv("BASE_RPC_URL", "https://mainnet.base.org")
 
-# Config de red de Celo (no viene por defecto en x402). name/version verificados
+# Config de red (Celo no viene por defecto en x402). name/version verificados
 # on-chain contra los contratos USDC.
-_CELO_CFG = {
+_NETWORK_CFG = {
     "eip155:42220": {
         "chain_id": 42220,
+        "rpc": CELO_RPC_URL,
         "default_asset": {
             "address": "0xcebA9300f2b948710d2653dD7B07f33A8B32118C",
             "name": "USDC",
@@ -60,6 +63,7 @@ _CELO_CFG = {
     },
     "eip155:11142220": {
         "chain_id": 11142220,
+        "rpc": os.getenv("CELO_SEPOLIA_RPC_URL", "https://forno.celo-sepolia.celo-testnet.org"),
         "default_asset": {
             "address": "0x01C5C0122039549AD1493B8220cABEdD739BC44E",
             "name": "USDC",
@@ -67,9 +71,22 @@ _CELO_CFG = {
             "decimals": 6,
         },
     },
+    "eip155:8453": {
+        "chain_id": 8453,
+        "rpc": BASE_RPC_URL,
+        "default_asset": {
+            "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+            "name": "USDC",
+            "version": "2",
+            "decimals": 6,
+        },
+    },
 }
-for _net, _cfg in _CELO_CFG.items():
-    NETWORK_CONFIGS.setdefault(_net, _cfg)
+for _net, _cfg in _NETWORK_CFG.items():
+    NETWORK_CONFIGS.setdefault(
+        _net,
+        {"chain_id": _cfg["chain_id"], "default_asset": _cfg["default_asset"]},
+    )
 
 _ERC20_BALANCE_ABI = [
     {
@@ -83,11 +100,11 @@ _ERC20_BALANCE_ABI = [
 
 
 def _usdc_balance(address: str) -> float:
-    cfg = _CELO_CFG.get(NETWORK)
+    cfg = _NETWORK_CFG.get(NETWORK)
     if not cfg:
         return -1.0
     asset = cfg["default_asset"]
-    w3 = Web3(Web3.HTTPProvider(CELO_RPC_URL))
+    w3 = Web3(Web3.HTTPProvider(cfg["rpc"]))
     c = w3.eth.contract(
         address=Web3.to_checksum_address(asset["address"]), abi=_ERC20_BALANCE_ABI
     )
@@ -123,7 +140,8 @@ def main() -> None:
         print(f"[!] No se pudo leer saldo USDC ({e}); se intenta igual.")
 
     # Cliente x402 con el esquema exact EVM y el signer de la wallet.
-    signer = EthAccountSignerWithRPC(account, CELO_RPC_URL)
+    rpc = (_NETWORK_CFG.get(NETWORK) or {}).get("rpc") or CELO_RPC_URL
+    signer = EthAccountSignerWithRPC(account, rpc)
     client = x402ClientSync()
     client.register(NETWORK, ExactEvmClientScheme(signer))
     http_client = x402HTTPClientSync(client)

@@ -1,10 +1,30 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+# Hard cutoff for BSG2026 Summit free channel (ADR 2026-07-26).
+_DEFAULT_SUMMIT_EXPIRES_AT = datetime(2026, 8, 1, 0, 0, 0, tzinfo=timezone.utc)
+
+
+def _parse_iso_datetime(raw: str, *, default: datetime) -> datetime:
+    """Parse ISO-8601; bare dates and Z suffix accepted. Fallback to default."""
+    value = (raw or "").strip()
+    if not value:
+        return default
+    try:
+        if value.endswith("Z"):
+            value = value[:-1] + "+00:00"
+        dt = datetime.fromisoformat(value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except ValueError:
+        return default
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT_DIR / "data"
@@ -38,6 +58,7 @@ ALCHEMY_NETWORK_META: dict[str, dict[str, int | str]] = {
     "arb-mainnet": {"chain_id": 42161, "name": "arbitrum"},
     "opt-mainnet": {"chain_id": 10, "name": "optimism"},
     "polygon-mainnet": {"chain_id": 137, "name": "polygon"},
+    "gnosis-mainnet": {"chain_id": 100, "name": "gnosis"},
 }
 
 # Chains accepted by Moralis getWalletActiveChains (mainnets). Celo is excluded.
@@ -87,6 +108,13 @@ class Settings:
     x402_facilitator_auth_header: str
     x402_pay_to: str
     x402_price: str
+    x402_base_enabled: bool
+    x402_base_network: str
+    x402_base_facilitator_url: str
+    x402_base_pay_to: str
+    coinbase_api_key_base: str
+    coinbase_secret_base: str
+    x402_base_ready: bool
     payment_log_enabled: bool
     payment_log_slug: str
     celo_rpc_url: str
@@ -98,6 +126,9 @@ class Settings:
     celo_confirmation_timeout: int
     onchain_log_enabled: bool
     onchain_log_slug: str
+    certificate_verify_slug: str
+    walcert_internal_api_key: str
+    walcert_internal_marketplaces: frozenset[str]
 
     def __init__(self) -> None:
         self.agent_id = int(os.getenv("AGENT_ID", "9699"))
@@ -207,6 +238,32 @@ class Settings:
         ).strip()
         self.x402_price = os.getenv("X402_PRICE", "$0.05").strip()
 
+        # x402 Base (CDP facilitator). Same payTo EOA; distinct USDC on eip155:8453.
+        self.x402_base_enabled = os.getenv(
+            "X402_BASE_ENABLED", "true"
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        self.x402_base_network = os.getenv(
+            "X402_BASE_NETWORK", "eip155:8453"
+        ).strip()
+        self.x402_base_facilitator_url = os.getenv(
+            "X402_BASE_FACILITATOR_URL",
+            "https://api.cdp.coinbase.com/platform/v2/x402",
+        ).strip().rstrip("/")
+        self.x402_base_pay_to = os.getenv(
+            "X402_BASE_PAY_TO", self.x402_pay_to
+        ).strip()
+        self.coinbase_api_key_base = (
+            os.getenv("COINBASE_API_KEY_BASE") or os.getenv("CDP_API_KEY_ID") or ""
+        ).strip()
+        self.coinbase_secret_base = (
+            os.getenv("COINBASE_SECRET_BASE") or os.getenv("CDP_API_KEY_SECRET") or ""
+        ).strip()
+        self.x402_base_ready = (
+            self.x402_base_enabled
+            and bool(self.coinbase_api_key_base)
+            and bool(self.coinbase_secret_base)
+        )
+
         # Registro de compras x402: el agente NO escribe en la BD. Arma la fila
         # y la envia a la Edge Function walcert-payment-log (reusa
         # SUPABASE_FUNCTIONS_URL + EDGE_SHARED_SECRET). No-op si falta config.
@@ -246,6 +303,55 @@ class Settings:
         self.onchain_log_slug = os.getenv(
             "ONCHAIN_LOG_SLUG", "walcert-certificate-onchain"
         ).strip()
+
+        # Verificación pública: fachada → Edge (BD + Celo + EIP-712).
+        self.certificate_verify_slug = os.getenv(
+            "CERTIFICATE_VERIFY_SLUG", "walcert-certificate-verify"
+        ).strip()
+
+        # Canal interno para adapters de marketplace (bypass x402 + atribución BD).
+        # No reutilizar EDGE_SHARED_SECRET. Allowlist: coma-separada.
+        self.walcert_internal_api_key = os.getenv(
+            "WALCERT_INTERNAL_API_KEY", ""
+        ).strip()
+        markets_raw = os.getenv(
+            "WALCERT_INTERNAL_MARKETPLACES",
+            "virtuals_acp,olas,circle,x402_bazaar,agentverse",
+        )
+        self.walcert_internal_marketplaces = frozenset(
+            m.strip().lower() for m in markets_raw.split(",") if m.strip()
+        )
+
+        # Canal Summit BSG2026 (key dedicada ≠ INTERNAL; caduca 1 ago 2026).
+        # No agregar bsg2026 a WALCERT_INTERNAL_MARKETPLACES.
+        self.walcert_summit_api_key = os.getenv(
+            "WALCERT_SUMMIT_API_KEY", ""
+        ).strip()
+        self.walcert_summit_enabled = os.getenv(
+            "WALCERT_SUMMIT_ENABLED", "true"
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        self.walcert_summit_expires_at = _parse_iso_datetime(
+            os.getenv("WALCERT_SUMMIT_EXPIRES_AT", ""),
+            default=_DEFAULT_SUMMIT_EXPIRES_AT,
+        )
+        # IP backstop (Vercel egress shared). Primary fairness is per-wallet.
+        self.walcert_summit_rate_limit = int(
+            os.getenv("WALCERT_SUMMIT_RATE_LIMIT", "500")
+        )
+        # 12 HTTP = 3 full packs (origins+activity+portfolio+multichain-v2).
+        self.walcert_summit_rate_limit_wallet = int(
+            os.getenv("WALCERT_SUMMIT_RATE_LIMIT_WALLET", "12")
+        )
+        self.walcert_summit_rate_window_seconds = int(
+            os.getenv("WALCERT_SUMMIT_RATE_WINDOW_SECONDS", str(15 * 60))
+        )
+        self.walcert_summit_marketplace = "bsg2026"
+
+        # GoldRush (Multichain v2) — Summit-only; never commit real keys.
+        self.goldrush_api_key = os.getenv("GOLDRUSH_API_KEY", "").strip()
+        self.goldrush_intensity_top_n = int(
+            os.getenv("GOLDRUSH_INTENSITY_TOP_N", "6")
+        )
 
 
 @lru_cache

@@ -30,6 +30,7 @@ Full documentation:
 - Edge Function security: [docs/edge-function-security.md](docs/edge-function-security.md)
 - Virtuals ACP adapter (internal channel): [docs/virtuals-acp.md](docs/virtuals-acp.md)
 - Summit BSG2026 channel (dedicated key, no x402, expires 2026-08-01): [docs/bsg2026-summit.md](docs/bsg2026-summit.md)
+- Concordium CIS-8004 registration: [docs/concordium-cis8004.md](docs/concordium-cis8004.md) · runbook: [docs/concordium-ops-runbook.md](docs/concordium-ops-runbook.md) · public card: `/agent-card.json`
 
 ## Architecture
 
@@ -40,7 +41,7 @@ flowchart LR
   Agent -->|"providers"| Providers["Alchemy / Moralis / Zerion"]
   Agent -->|"scoring (Bearer secret)"| Edge["Supabase Edge Functions"]
   Edge -->|"label lookup RPC"| DB["Supabase (walcert / wallets)"]
-  Agent -->|"x402 verify + settle"| Facilitator["x402.celo.org facilitator"]
+  Agent -->|"x402 verify + settle"| Facilitator["x402.celo.org (Celo) / CDP (Base)"]
 ```
 
 The agent fetches raw data from the providers, forwards it to the corresponding Supabase Edge Function for scoring (authenticated with a shared secret), and returns the graded certificate.
@@ -74,22 +75,22 @@ The agent is a thin facade: Supabase Edge Function `walcert-certificate-verify` 
 
 Offline CLI (JSON in hand): `python scripts/verify_certificate.py path/to/certificate.json`.
 
-## x402 payments (Celo mainnet)
+## x402 payments (Celo + Base)
 
-The `/v1/certificates/*` endpoints are protected by an x402 paywall (Track 2 of the Celo Agentic Payments & DeFAI Hackathon):
+The `/v1/certificates/*` endpoints are protected by an x402 paywall. A request without payment returns **402** with two options (when Base is enabled); the client pays on one network.
 
-| Field | Value |
-|-------|-------|
-| Network | `eip155:42220` (Celo mainnet) |
-| Asset | USDC `0xcebA9300f2b948710d2653dD7B07f33A8B32118C` |
-| Price | `$0.05` |
-| Pay to | `0xF4D938200445B0Df0f028af6d90D016147AEd095` |
-| Scheme | `exact` (gasless EIP-3009) |
-| Facilitator | `https://api.x402.celo.org` |
+| Field | Celo (Track 2) | Base |
+|-------|----------------|------|
+| Network | `eip155:42220` | `eip155:8453` |
+| Asset | USDC `0xcebA9300f2b948710d2653dD7B07f33A8B32118C` | USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
+| Price | `$0.05` | `$0.05` |
+| Pay to | `0xF4D938200445B0Df0f028af6d90D016147AEd095` | same EOA |
+| Scheme | `exact` (gasless EIP-3009) | same |
+| Facilitator | `https://api.x402.celo.org` | CDP `https://api.cdp.coinbase.com/platform/v2/x402` |
 
-Flow: a request without payment returns `402` with the payment requirements; the client signs an EIP-3009 authorization and retries with the `X-PAYMENT` header; the agent verifies and settles via the facilitator and returns `200` with the certificate. Settled payments are logged to `walcert.x402_payments` through a dedicated Edge Function (the Supabase service role key never leaves the Edge).
+Flow: a request without payment returns `402`. In x402 v2 the JSON body may be `{}`; payment options are in the `PAYMENT-REQUIRED` header (base64 JSON) with `accepts` for Celo and Base. The client signs an EIP-3009 authorization on **one** network and retries with the payment header; the agent verifies and settles via that network's facilitator and returns `200` with the certificate. Settled payments are logged to `walcert.x402_payments` (`network` / `facilitator` distinguish Celo vs Base). Track 2 hackathon credit is Celo-only.
 
-See [scripts/x402_buyer_test.py](scripts/x402_buyer_test.py) for a reference buyer.
+See [scripts/x402_buyer_test.py](scripts/x402_buyer_test.py) for a reference buyer (`X402_NETWORK=eip155:42220` or `eip155:8453`).
 
 ## On-chain verifiable certificates
 
@@ -132,7 +133,7 @@ Key environment variables (see [.env.example](.env.example)):
 
 - Providers: `ALCHEMY_API_KEY`, `ALCHEMY_NETWORKS`, `MORALIS_API_KEY`, `ZERION_API_KEY`
 - Edge scoring: `SUPABASE_FUNCTIONS_URL`, `EDGE_SHARED_SECRET`, `EDGE_SCORING_ENABLED`
-- x402: `X402_ENABLED`, `X402_NETWORK`, `X402_FACILITATOR_URL`, `X402_FACILITATOR_API_KEY`, `X402_PAY_TO`, `X402_PRICE`
+- x402: `X402_ENABLED`, `X402_NETWORK`, `X402_FACILITATOR_URL`, `X402_FACILITATOR_API_KEY`, `X402_PAY_TO`, `X402_PRICE`, `X402_BASE_ENABLED`, `COINBASE_API_KEY_BASE`, `COINBASE_SECRET_BASE`
 - Payment logging: `PAYMENT_LOG_ENABLED`, `PAYMENT_LOG_SLUG`
 - On-chain verifiability: `CELO_RPC_URL`, `REPUTATION_REGISTRY_ADDRESS`, `CERT_SIGNING_ENABLED`, `ONCHAIN_ANCHOR_ENABLED`, `AGENT_SIGNER_KEY` (dedicated monitor wallet), `CERT_SIGNER_ADDRESS`, `CELO_CONFIRMATION_TIMEOUT`, `ONCHAIN_LOG_ENABLED`
 
@@ -181,7 +182,7 @@ app/
   models.py                   # Pydantic models
   services.py                 # Orchestration (providers -> edge scoring -> certify)
   internal_access.py          # Marketplace + Summit Bearer auth + attribution context
-  payments.py                 # x402 paywall (Celo; bypass for internal/summit)
+  payments.py                 # x402 paywall (Celo + Base/CDP; bypass for internal/summit)
   payment_log.py              # x402 settlement logging middleware
   onchain.py                  # EIP-712 signing + ERC-8004 giveFeedback anchoring
   onchain_log.py              # Background client: persist onchain block to Supabase

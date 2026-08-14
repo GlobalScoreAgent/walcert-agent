@@ -18,6 +18,7 @@ import httpx
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import Settings, get_settings
+from app.payments import facilitator_url_for_network
 
 logger = logging.getLogger("walcert.payment_log")
 
@@ -133,7 +134,9 @@ class PaymentLogMiddleware(BaseHTTPMiddleware):
             "nonce": str(nonce) if nonce is not None else None,
             "tx_hash": getattr(settle, "transaction", None) or None,
             "success": bool(getattr(settle, "success", False)),
-            "facilitator": self.settings.x402_facilitator_url,
+            "facilitator": facilitator_url_for_network(
+                self.settings, str(network) if network else None
+            ),
             "settle_response": _dump(settle),
             "payment_requirements": reqs_dump,
             "payment_payload": payload_dump,

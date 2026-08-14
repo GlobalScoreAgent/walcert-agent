@@ -9,9 +9,10 @@ Fuente canónica de producto: bóveda Obsidian `03 - Walcert`. Este archivo resu
 | agentId | **9699** |
 | Explorer | https://erc-8004.quicknode.com/agents/celo-mainnet/9699 |
 | Owner | `0x475F589BD4bFe82b333b8006dcc278f393b8E124` |
-| payTo / operativa | `0xF4D938200445B0Df0f028af6d90D016147AEd095` |
+| payTo / operativa | `0xF4D938200445B0Df0f028af6d90D016147AEd095` (USDC Celo **y** Base) |
 | Monitor / firmante | `0xE7e9f27e02149696b33C332b1C2e19F4BF723e51` |
 | Public URL | https://walcert.globalscoreagent.com (`GET /` = agent card JSON bilingüe) |
+| Concordium Agent Card | https://walcert.globalscoreagent.com/agent-card.json (CIS-8004 `agent_uri`; CIS-8 = Owner) |
 
 ## Alineación obligatoria
 
@@ -30,4 +31,4 @@ No usar la identidad anterior (`9696` / `0x2eFC66…`).
 - `GET /` → `agent_id: 9699`, explorer `…/9699`
 - Certificado pagado / fila en `walcert.certificate_requests` → `issuer.agent_id == "9699"`
 
-Ver también: [deployment-guide.md](deployment-guide.md), [edge-function-security.md](edge-function-security.md), [agent/registration.json](../agent/registration.json).
+Ver también: [deployment-guide.md](deployment-guide.md), [edge-function-security.md](edge-function-security.md), [concordium-cis8004.md](concordium-cis8004.md), [agent/registration.json](../agent/registration.json).

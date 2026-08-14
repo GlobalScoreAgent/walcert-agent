@@ -22,7 +22,7 @@ flowchart LR
   Agent -->|"raw data"| Providers["Alchemy / Moralis / Zerion"]
   Agent -->|"scoring (Bearer secret)"| Edge["Supabase Edge Functions"]
   Edge -->|"label lookup RPC"| DB["Supabase (walcert schema)"]
-  Agent -->|"verify + settle"| Facilitator["x402.celo.org facilitator"]
+  Agent -->|"verify + settle"| Facilitator["x402.celo.org (Celo) / CDP (Base)"]
   Agent -->|"EIP-712 sign + giveFeedback"| Celo["Celo: ERC-8004 Reputation Registry"]
   Agent -->|"persist onchain/payment"| Edge
 ```
@@ -59,7 +59,7 @@ payments. Preview of `multichain` / `portfolio` returns 403.
 | `app/services.py` | Orchestration: providers → edge scoring → certify (sign + anchor) |
 | `app/routes/certificates.py` | `/health`, `/v1/quota`, `/v1/preview/{type}`, `/v1/certificates/{type}`, `/v1/verify` |
 | `app/providers/` | `alchemy`, `moralis`, `zerion`, `edge_scoring`, `quota`, `cache` |
-| `app/payments.py` | x402 paywall install (Celo mainnet) |
+| `app/payments.py` | x402 paywall install (Celo + optional Base/CDP) |
 | `app/payment_log.py` | Middleware that logs settled x402 payments |
 | `app/onchain.py` | EIP-712 signing + ERC-8004 `giveFeedback` anchoring |
 | `app/onchain_log.py` | Background client that persists the on-chain block to Supabase |
@@ -117,7 +117,8 @@ The monitor wallet only needs a little **CELO** for gas (`giveFeedback` costs ~0
 - A Supabase project (with the `walcert` schema and the `wallets.*` label tables)
 - [Supabase CLI](https://supabase.com/docs/guides/cli) (`supabase --version`)
 - Provider API keys: **Alchemy**, **Moralis**, **Zerion**
-- An **x402 facilitator API key** from [x402.celo.org](https://x402.celo.org) (for `/settle`)
+- An **x402 facilitator API key** from [x402.celo.org](https://x402.celo.org) (for Celo `/settle`)
+- **CDP Secret API keys** (Live) for Base x402: `COINBASE_API_KEY_BASE` / `COINBASE_SECRET_BASE` from [portal.cdp.coinbase.com](https://portal.cdp.coinbase.com)
 - A **Pinata JWT** (to pin ERC-8004 metadata to IPFS)
 - The three wallets from §2 (with their private keys where noted), the monitor funded with CELO
 - For production: an Ubuntu host (e.g. AWS EC2) and a Cloudflare account for the Tunnel
@@ -236,7 +237,7 @@ See [.env.example](../.env.example) for the annotated template. Groups:
 | Identity | `AGENT_ID` (9699), `AGENT_WALLET` (payTo `0xF4D9…`), `PUBLIC_BASE_URL`, `CELO_CHAIN_ID` |
 | Providers | `ALCHEMY_API_KEY`, `ALCHEMY_NETWORKS`, `MORALIS_API_KEY`, `MORALIS_CHAINS`, `ZERION_API_KEY`, `GOLDRUSH_API_KEY` (Multichain v2 Summit-only) |
 | Edge scoring | `SUPABASE_FUNCTIONS_URL`, `EDGE_SHARED_SECRET`, `EDGE_SCORING_ENABLED` |
-| x402 | `X402_ENABLED`, `X402_NETWORK`, `X402_FACILITATOR_URL`, `X402_FACILITATOR_API_KEY`, `X402_FACILITATOR_AUTH_HEADER`, `X402_PAY_TO`, `X402_PRICE` |
+| x402 | `X402_ENABLED`, `X402_NETWORK`, `X402_FACILITATOR_URL`, `X402_FACILITATOR_API_KEY`, `X402_FACILITATOR_AUTH_HEADER`, `X402_PAY_TO`, `X402_PRICE`, `X402_BASE_ENABLED`, `X402_BASE_NETWORK`, `X402_BASE_FACILITATOR_URL`, `X402_BASE_PAY_TO`, `COINBASE_API_KEY_BASE`, `COINBASE_SECRET_BASE` |
 | Internal marketplaces | `WALCERT_INTERNAL_API_KEY`, `WALCERT_INTERNAL_MARKETPLACES` |
 | Summit BSG2026 | `WALCERT_SUMMIT_API_KEY`, `WALCERT_SUMMIT_ENABLED`, `WALCERT_SUMMIT_EXPIRES_AT`, `WALCERT_SUMMIT_RATE_LIMIT_WALLET` (default 12), `WALCERT_SUMMIT_RATE_LIMIT` (IP backstop, default 500), `WALCERT_SUMMIT_RATE_WINDOW_SECONDS` |
 | Payment logging | `PAYMENT_LOG_ENABLED`, `PAYMENT_LOG_SLUG` |
@@ -249,20 +250,27 @@ See [.env.example](../.env.example) for the annotated template. Groups:
 
 ---
 
-## 7. x402 payments (Celo mainnet)
+## 7. x402 payments (Celo + Base)
 
-| Field | Value |
-|-------|-------|
-| Network | `eip155:42220` (the facilitator supports Celo mainnet only) |
-| Asset | USDC `0xcebA9300f2b948710d2653dD7B07f33A8B32118C` |
-| Price | `$0.05` (`X402_PRICE`) |
-| Pay to | `X402_PAY_TO` = operational wallet |
-| Scheme | `exact` (gasless EIP-3009) |
-| Facilitator | `https://api.x402.celo.org` (`X-API-Key` header for `/settle`) |
+The same `POST /v1/certificates/{type}` returns **402 with two `accepts`** when Base is enabled. The client picks one network; the agent routes verify/settle to the matching facilitator.
 
-Enable with `X402_ENABLED=true`. Test the buyer side with
-[scripts/x402_buyer_test.py](../scripts/x402_buyer_test.py) (needs a funded buyer wallet on
-Celo with USDC). Set `X402_ENABLED=false` to bypass the paywall (e.g. for local E2E).
+| Field | Celo (Track 2) | Base |
+|-------|----------------|------|
+| Network | `eip155:42220` | `eip155:8453` |
+| Asset | USDC `0xcebA9300f2b948710d2653dD7B07f33A8B32118C` | USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
+| Price | `$0.05` (`X402_PRICE`) | same |
+| Pay to | `X402_PAY_TO` (operational EOA) | `X402_BASE_PAY_TO` (default = same EOA) |
+| Scheme | `exact` (gasless EIP-3009) | same |
+| Facilitator | `https://api.x402.celo.org` | CDP `https://api.cdp.coinbase.com/platform/v2/x402` |
+| Auth | `X402_FACILITATOR_API_KEY` | `COINBASE_API_KEY_BASE` + `COINBASE_SECRET_BASE` (JWT) |
+
+Enable Celo with `X402_ENABLED=true`. Enable Base with `X402_BASE_ENABLED=true` plus CDP Live keys. If Base keys are missing, the paywall stays Celo-only (warning in logs). Track 2 attribution remains Celo settlements only.
+
+Pass **both** facilitator clients into `x402ResourceServer` (native list). Wrapping Celo+CDP in a single client makes `initialize()` see only Celo `/supported` and the Base option returns HTTP 500.
+
+x402 v2: the 402 JSON body may be `{}`; `accepts` live in the `PAYMENT-REQUIRED` header (base64 JSON). Smoke: `POST /v1/certificates/origins` without payment → 402 with Celo (`eip155:42220`) **and** Base (`eip155:8453`).
+
+Test the buyer with [scripts/x402_buyer_test.py](../scripts/x402_buyer_test.py): `X402_NETWORK=eip155:42220` (Celo USDC) or `eip155:8453` (Base USDC). Set `X402_ENABLED=false` to bypass the paywall (e.g. for local E2E).
 
 ---
 

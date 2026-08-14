@@ -19,7 +19,7 @@ Client ACP ──escrow USDC (Base)──► ACP Provider wallet
                                               (access_channel / marketplace / billing)
 ```
 
-- Direct API clients still pay **x402 on Celo** → rows in `walcert.x402_payments`.
+- Direct API clients still pay **x402 on Celo or Base** → rows in `walcert.x402_payments` (`network` distinguishes the chain). Track 2 credit remains Celo-only.
 - Marketplace adapters use **internal auth** → `access_channel=internal`,
   `billing=marketplace`, `marketplace=virtuals_acp` (no x402 settle).
 
