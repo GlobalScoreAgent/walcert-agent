@@ -31,6 +31,7 @@ Full documentation:
 - Virtuals ACP adapter (internal channel): [docs/virtuals-acp.md](docs/virtuals-acp.md)
 - Summit BSG2026 channel (dedicated key, no x402, expires 2026-08-01): [docs/bsg2026-summit.md](docs/bsg2026-summit.md)
 - Concordium CIS-8004 registration: [docs/concordium-cis8004.md](docs/concordium-cis8004.md) · runbook: [docs/concordium-ops-runbook.md](docs/concordium-ops-runbook.md) · public card: `/agent-card.json`
+- CDP Bazaar / agentic.market discovery: [docs/cdp-bazaar.md](docs/cdp-bazaar.md)
 
 ## Architecture
 
@@ -88,9 +89,18 @@ The `/v1/certificates/*` endpoints are protected by an x402 paywall. A request w
 | Scheme | `exact` (gasless EIP-3009) | same |
 | Facilitator | `https://api.x402.celo.org` | CDP `https://api.cdp.coinbase.com/platform/v2/x402` |
 
-Flow: a request without payment returns `402`. In x402 v2 the JSON body may be `{}`; payment options are in the `PAYMENT-REQUIRED` header (base64 JSON) with `accepts` for Celo and Base. The client signs an EIP-3009 authorization on **one** network and retries with the payment header; the agent verifies and settles via that network's facilitator and returns `200` with the certificate. Settled payments are logged to `walcert.x402_payments` (`network` / `facilitator` distinguish Celo vs Base). Track 2 hackathon credit is Celo-only.
+Flow: a request without payment returns `402`. In x402 v2 the JSON body may be `{}`; payment options are in the `PAYMENT-REQUIRED` header (base64 JSON). When Base/CDP is enabled, `accepts[0]` is Base (`eip155:8453`) and Celo is second (CDP Bazaar validate reads the first option; Celo/Track 2 stay available). Paid routes declare Python-opt-in Bazaar discovery metadata. The client signs an EIP-3009 authorization on **one** network and retries with the payment header; the agent verifies and settles via that network's facilitator and returns `200` with the certificate. Settled payments are logged to `walcert.x402_payments` (`network` / `facilitator` distinguish Celo vs Base). Track 2 hackathon credit is Celo-only.
 
 See [scripts/x402_buyer_test.py](scripts/x402_buyer_test.py) for a reference buyer (`X402_NETWORK=eip155:42220` or `eip155:8453`).
+
+## CDP Bazaar / agentic.market
+
+Paid routes declare Python-opt-in Bazaar discovery (`extensions.bazaar`). CDP indexes a resource after a **settled** Base payment through the CDP facilitator (Celo/Track 2 does not count). Catalog listing can take a few minutes after settle.
+
+- Validate (no API key): `POST https://api.cdp.coinbase.com/platform/v2/x402/validate`
+- Catalog UI: [agentic.market](https://agentic.market/?q=walcert)
+- First Base settle (2026-08-17): origins indexed — [tx `0xfae8a5c6…4216`](https://basescan.org/tx/0xfae8a5c6e5b12aec49472fe547a40cb069be81b43ae4e10fdbf0bd4023924216)
+- 30 days without a CDP settle → delist. Details: [docs/cdp-bazaar.md](docs/cdp-bazaar.md)
 
 ## On-chain verifiable certificates
 

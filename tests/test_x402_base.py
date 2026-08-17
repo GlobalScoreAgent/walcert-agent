@@ -1,6 +1,13 @@
 from types import SimpleNamespace
 
-from app.payments import facilitator_url_for_network
+from app.models import CERTIFICATE_TYPES
+from app.payments import (
+    BAZAAR_DESCRIPTIONS,
+    _bazaar_extensions,
+    _certificate_route_config,
+    _payment_accepts,
+    facilitator_url_for_network,
+)
 
 
 def _settings(**kwargs):
@@ -9,6 +16,9 @@ def _settings(**kwargs):
         x402_facilitator_url="https://api.x402.celo.org",
         x402_base_network="eip155:8453",
         x402_base_facilitator_url="https://api.cdp.coinbase.com/platform/v2/x402",
+        x402_pay_to="0xF4D938200445B0Df0f028af6d90D016147AEd095",
+        x402_base_pay_to="0xF4D938200445B0Df0f028af6d90D016147AEd095",
+        x402_price="$0.05",
     )
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
@@ -51,3 +61,40 @@ def test_x402_base_ready_with_coinbase_env(monkeypatch):
     assert s.x402_base_ready is True
     assert s.x402_base_network == "eip155:8453"
     assert s.x402_base_pay_to == s.x402_pay_to
+
+
+def test_payment_accepts_base_first_when_include_base():
+    s = _settings()
+    nets = [opt.network for opt in _payment_accepts(s, include_base=True)]
+    assert nets == ["eip155:8453", "eip155:42220"]
+
+
+def test_payment_accepts_celo_only():
+    s = _settings()
+    nets = [opt.network for opt in _payment_accepts(s, include_base=False)]
+    assert nets == ["eip155:42220"]
+
+
+def test_bazaar_descriptions_within_cdp_limit():
+    for cert_type, text in BAZAAR_DESCRIPTIONS.items():
+        assert cert_type in CERTIFICATE_TYPES
+        assert 0 < len(text) <= 500
+
+
+def test_bazaar_extensions_on_all_paid_routes():
+    s = _settings()
+    accepts = _payment_accepts(s, include_base=True)
+    for cert_type in CERTIFICATE_TYPES:
+        ext = _bazaar_extensions(cert_type)
+        assert "bazaar" in ext
+        cfg = _certificate_route_config(cert_type, accepts, bazaar=True)
+        assert cfg.extensions is not None
+        assert "bazaar" in cfg.extensions
+        assert cfg.description == BAZAAR_DESCRIPTIONS[cert_type]
+
+
+def test_celo_only_route_has_no_bazaar_extension():
+    s = _settings()
+    accepts = _payment_accepts(s, include_base=False)
+    cfg = _certificate_route_config("origins", accepts, bazaar=False)
+    assert cfg.extensions is None

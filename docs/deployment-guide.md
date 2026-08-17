@@ -268,7 +268,9 @@ Enable Celo with `X402_ENABLED=true`. Enable Base with `X402_BASE_ENABLED=true` 
 
 Pass **both** facilitator clients into `x402ResourceServer` (native list). Wrapping Celo+CDP in a single client makes `initialize()` see only Celo `/supported` and the Base option returns HTTP 500.
 
-x402 v2: the 402 JSON body may be `{}`; `accepts` live in the `PAYMENT-REQUIRED` header (base64 JSON). Smoke: `POST /v1/certificates/origins` without payment → 402 with Celo (`eip155:42220`) **and** Base (`eip155:8453`).
+x402 v2: the 402 JSON body may be `{}`; `accepts` live in the `PAYMENT-REQUIRED` header (base64 JSON). When Base is enabled, `accepts[0]` is Base (`eip155:8453`) and Celo is second — CDP Bazaar validate reads `[0]`; Track 2 still uses Celo. Paid routes declare Python-opt-in Bazaar discovery (`extensions.bazaar`). Smoke: `POST /v1/certificates/origins` without payment → 402 with Base **and** Celo.
+
+Bazaar deploy to EC2: [push_cdp_bazaar.ps1](../deploy/push_cdp_bazaar.ps1) (copies `payments.py` / `agent_card.py`, installs `jsonschema`, restarts `walcert-agent`). Validate the four paid URLs with `POST https://api.cdp.coinbase.com/platform/v2/x402/validate` (`valid: true`, `simulation.outcome: accepted`). Indexing is **not** validate: run a Base settle (`X402_NETWORK=eip155:8453` + [x402_buyer_test.py](../scripts/x402_buyer_test.py)). Celo settlements do not index. 30 days without a CDP settle → delist. Operator notes: [cdp-bazaar.md](cdp-bazaar.md).
 
 Test the buyer with [scripts/x402_buyer_test.py](../scripts/x402_buyer_test.py): `X402_NETWORK=eip155:42220` (Celo USDC) or `eip155:8453` (Base USDC). Set `X402_ENABLED=false` to bypass the paywall (e.g. for local E2E).
 

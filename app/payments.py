@@ -11,7 +11,7 @@ import logging
 from typing import Any
 
 from app.config import Settings
-from app.models import CERTIFICATE_TYPES
+from app.models import CERTIFICATE_TYPES, PROVIDER_BY_TYPE
 
 logger = logging.getLogger("walcert.x402")
 
@@ -107,6 +107,113 @@ def _cdp_facilitator_client(settings: Settings):
     return HTTPFacilitatorClient(FacilitatorConfig(url=url))
 
 
+# Descriptions for the 402 `resource.description` / CDP Bazaar listing (≤500 chars).
+BAZAAR_DESCRIPTIONS: dict[str, str] = {
+    "origins": (
+        "Before hiring or paying an ERC-8004 agent, grade the controlling "
+        "wallet's funding origins (CEX, bridge, mixer, organic) A-F. POST "
+        "wallet_address; signed certificate + Celo on-chain anchor. $0.05 USDC."
+    ),
+    "activity": (
+        "Grade 15-day wallet activity (counterparties, HHI, velocity, bot-like) "
+        "A-F before you transact. POST wallet_address; signed certificate. $0.05 USDC."
+    ),
+    "multichain": (
+        "Grade a wallet's chain footprint and longevity A-F across EVM networks. "
+        "POST wallet_address; signed certificate. $0.05 USDC."
+    ),
+    "portfolio": (
+        "Grade wallet portfolio quality (usable vs spam/dust, concentration, "
+        "tiers) A-F. POST wallet_address; signed certificate. $0.05 USDC."
+    ),
+}
+
+_EXAMPLE_WALLET = "0x2eFC66c0a78620Dd254443998BF2f11B685602E3"
+
+
+def _payment_accepts(settings: Settings, *, include_base: bool) -> list[Any]:
+    """PaymentOption list. When Base is on, Base is first (CDP validate reads [0])."""
+    from x402.http import PaymentOption
+
+    celo = PaymentOption(
+        scheme="exact",
+        pay_to=settings.x402_pay_to,
+        price=settings.x402_price,
+        network=settings.x402_network,
+    )
+    if not include_base:
+        return [celo]
+    base = PaymentOption(
+        scheme="exact",
+        pay_to=settings.x402_base_pay_to,
+        price=settings.x402_price,
+        network=settings.x402_base_network,
+    )
+    return [base, celo]
+
+
+def _bazaar_output_example(cert_type: str) -> dict[str, Any]:
+    """Reduced envelope for Bazaar — no analysis.inflows."""
+    return {
+        "available": True,
+        "status": "ok",
+        "mode": "hot",
+        "certificate_type": cert_type,
+        "provider": PROVIDER_BY_TYPE.get(cert_type, "alchemy"),
+        "certificate": {
+            "type": cert_type.upper(),
+            "grade": "B",
+            "grade_label": {"eng": "Good", "esp": "Bueno"},
+            "summary": {
+                "eng": "Wallet maturity certificate (A-F).",
+                "esp": "Certificado de madurez de wallet (A-F).",
+            },
+            "data_hash": "0x…",
+            "signature": {"scheme": "eip712", "signer": "0xE7e9…"},
+            "onchain": {"status": "confirmed", "chain_id": 42220, "tx_hash": "0x…"},
+        },
+    }
+
+
+def _bazaar_extensions(cert_type: str) -> dict[str, Any]:
+    from x402.extensions.bazaar.resource_service import (
+        OutputConfig,
+        declare_discovery_extension,
+    )
+
+    return declare_discovery_extension(
+        input={"wallet_address": _EXAMPLE_WALLET},
+        input_schema={
+            "type": "object",
+            "properties": {
+                "wallet_address": {
+                    "type": "string",
+                    "description": "EVM wallet address (0x-prefixed, 42 chars)",
+                }
+            },
+            "required": ["wallet_address"],
+        },
+        body_type="json",
+        output=OutputConfig(example=_bazaar_output_example(cert_type)),
+    )
+
+
+def _certificate_route_config(cert_type: str, accepts: list[Any], *, bazaar: bool) -> Any:
+    from x402.http.types import RouteConfig
+
+    description = BAZAAR_DESCRIPTIONS.get(
+        cert_type, f"Walcert {cert_type} certificate (A-F, hot-analysis)."
+    )
+    kwargs: dict[str, Any] = {
+        "accepts": accepts,
+        "description": description,
+        "mime_type": "application/json",
+    }
+    if bazaar:
+        kwargs["extensions"] = _bazaar_extensions(cert_type)
+    return RouteConfig(**kwargs)
+
+
 class _SkipX402IfInternalASGI:
     """Envuelve PaymentMiddlewareASGI: canal interno no paga x402."""
 
@@ -138,8 +245,7 @@ def install_x402(app) -> bool:
         return False
 
     try:
-        from x402.http import FacilitatorConfig, HTTPFacilitatorClient, PaymentOption
-        from x402.http.types import RouteConfig
+        from x402.http import FacilitatorConfig, HTTPFacilitatorClient
         from x402.mechanisms.evm.exact import ExactEvmServerScheme
         from x402.server import x402ResourceServer
     except ImportError as exc:  # pragma: no cover - dependencia opcional
@@ -182,37 +288,37 @@ def install_x402(app) -> bool:
     if settings.x402_base_network in clients and settings.x402_base_network != settings.x402_network:
         server.register(settings.x402_base_network, ExactEvmServerScheme())
 
-    accepts = [
-        PaymentOption(
-            scheme="exact",
-            pay_to=settings.x402_pay_to,
-            price=settings.x402_price,
-            network=settings.x402_network,
-        )
-    ]
-    if settings.x402_base_network in clients and settings.x402_base_network != settings.x402_network:
-        accepts.append(
-            PaymentOption(
-                scheme="exact",
-                pay_to=settings.x402_base_pay_to,
-                price=settings.x402_price,
-                network=settings.x402_base_network,
-            )
-        )
+    include_base = (
+        settings.x402_base_network in clients
+        and settings.x402_base_network != settings.x402_network
+    )
+    if include_base:
+        try:
+            from x402.extensions.bazaar.server import bazaar_resource_server_extension
 
-    routes: dict[str, RouteConfig] = {}
+            server.register_extension(bazaar_resource_server_extension)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Bazaar extension no se pudo registrar (%s); 402 sin discovery.", exc)
+            include_base_bazaar = False
+        else:
+            include_base_bazaar = True
+    else:
+        include_base_bazaar = False
+
+    accepts = _payment_accepts(settings, include_base=include_base)
+
+    routes: dict[str, Any] = {}
     for cert_type in CERTIFICATE_TYPES:
-        routes[f"POST /v1/certificates/{cert_type}"] = RouteConfig(
-            accepts=accepts,
-            description=f"Walcert {cert_type} certificate (A-F, hot-analysis).",
-            mime_type="application/json",
+        routes[f"POST /v1/certificates/{cert_type}"] = _certificate_route_config(
+            cert_type, accepts, bazaar=include_base_bazaar
         )
 
     app.add_middleware(_SkipX402IfInternalASGI, routes=routes, server=server)
     logger.info(
-        "x402 montado (bypass interno/summit): red=%s extra=%s precio=%s payTo=%s facilitador=%s",
+        "x402 montado (bypass interno/summit): red=%s extra=%s bazaar=%s precio=%s payTo=%s facilitador=%s",
         settings.x402_network,
-        settings.x402_base_network if settings.x402_base_network in clients else None,
+        settings.x402_base_network if include_base else None,
+        include_base_bazaar,
         settings.x402_price,
         settings.x402_pay_to,
         settings.x402_facilitator_url,
