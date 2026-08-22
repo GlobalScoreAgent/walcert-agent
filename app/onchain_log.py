@@ -46,6 +46,7 @@ def schedule_onchain_log(
     certificate_id: str | None,
     onchain: dict[str, Any] | None,
     signature: dict[str, Any] | None,
+    receipt_bnb: dict[str, Any] | None = None,
 ) -> None:
     """Dispara (fire-and-forget) la persistencia del bloque onchain en Supabase."""
     settings = get_settings()
@@ -53,7 +54,7 @@ def schedule_onchain_log(
         return
     if not (settings.supabase_functions_url and settings.edge_shared_secret):
         return
-    if not certificate_id or onchain is None:
+    if not certificate_id or (onchain is None and not receipt_bnb):
         return
 
     url = f"{settings.supabase_functions_url.rstrip('/')}/{settings.onchain_log_slug}"
@@ -63,6 +64,8 @@ def schedule_onchain_log(
         "signature": signature,
         "tx_hash": onchain.get("tx_hash") if isinstance(onchain, dict) else None,
     }
+    if receipt_bnb:
+        payload["receipt_bnb"] = receipt_bnb
 
     try:
         loop = asyncio.get_running_loop()

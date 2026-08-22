@@ -22,7 +22,7 @@ flowchart LR
   Agent -->|"raw data"| Providers["Alchemy / Moralis / Zerion"]
   Agent -->|"scoring (Bearer secret)"| Edge["Supabase Edge Functions"]
   Edge -->|"label lookup RPC"| DB["Supabase (walcert schema)"]
-  Agent -->|"verify + settle"| Facilitator["x402.celo.org (Celo) / CDP (Base)"]
+  Agent -->|"verify + settle"| Facilitator["x402.celo.org (Celo) / CDP (Base) / Dexter (BNB Permit2)"]
   Agent -->|"EIP-712 sign + giveFeedback"| Celo["Celo: ERC-8004 Reputation Registry"]
   Agent -->|"persist onchain/payment"| Edge
 ```
@@ -237,7 +237,7 @@ See [.env.example](../.env.example) for the annotated template. Groups:
 | Identity | `AGENT_ID` (9699), `AGENT_WALLET` (payTo `0xF4D9…`), `PUBLIC_BASE_URL`, `CELO_CHAIN_ID` |
 | Providers | `ALCHEMY_API_KEY`, `ALCHEMY_NETWORKS`, `MORALIS_API_KEY`, `MORALIS_CHAINS`, `ZERION_API_KEY`, `GOLDRUSH_API_KEY` (Multichain v2 Summit-only) |
 | Edge scoring | `SUPABASE_FUNCTIONS_URL`, `EDGE_SHARED_SECRET`, `EDGE_SCORING_ENABLED` |
-| x402 | `X402_ENABLED`, `X402_NETWORK`, `X402_FACILITATOR_URL`, `X402_FACILITATOR_API_KEY`, `X402_FACILITATOR_AUTH_HEADER`, `X402_PAY_TO`, `X402_PRICE`, `X402_BASE_ENABLED`, `X402_BASE_NETWORK`, `X402_BASE_FACILITATOR_URL`, `X402_BASE_PAY_TO`, `COINBASE_API_KEY_BASE`, `COINBASE_SECRET_BASE` |
+| x402 | `X402_ENABLED`, `X402_NETWORK`, `X402_FACILITATOR_URL`, `X402_FACILITATOR_API_KEY`, `X402_FACILITATOR_AUTH_HEADER`, `X402_PAY_TO`, `X402_PRICE`, `X402_BASE_*`, `COINBASE_*_BASE`, `X402_BNB_ENABLED`, `X402_BNB_NETWORK`, `X402_BNB_FACILITATOR_URL`, `X402_BNB_PAY_TO`, `BNB_RECEIPT_CONTRACT` |
 | Internal marketplaces | `WALCERT_INTERNAL_API_KEY`, `WALCERT_INTERNAL_MARKETPLACES` |
 | Summit BSG2026 | `WALCERT_SUMMIT_API_KEY`, `WALCERT_SUMMIT_ENABLED`, `WALCERT_SUMMIT_EXPIRES_AT`, `WALCERT_SUMMIT_RATE_LIMIT_WALLET` (default 12), `WALCERT_SUMMIT_RATE_LIMIT` (IP backstop, default 500), `WALCERT_SUMMIT_RATE_WINDOW_SECONDS` |
 | Payment logging | `PAYMENT_LOG_ENABLED`, `PAYMENT_LOG_SLUG` |
@@ -250,21 +250,19 @@ See [.env.example](../.env.example) for the annotated template. Groups:
 
 ---
 
-## 7. x402 payments (Celo + Base)
+## 7. x402 payments (Celo + Base + optional BNB)
 
-The same `POST /v1/certificates/{type}` returns **402 with two `accepts`** when Base is enabled. The client picks one network; the agent routes verify/settle to the matching facilitator.
+The same `POST /v1/certificates/{type}` returns **402** with `accepts` for each enabled rail. The client picks one network; the agent routes verify/settle to that facilitator. **`accepts[0]` stays Base** when Base is on (CDP Bazaar).
 
-| Field | Celo (Track 2) | Base |
-|-------|----------------|------|
-| Network | `eip155:42220` | `eip155:8453` |
-| Asset | USDC `0xcebA9300f2b948710d2653dD7B07f33A8B32118C` | USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
-| Price | `$0.05` (`X402_PRICE`) | same |
-| Pay to | `X402_PAY_TO` (operational EOA) | `X402_BASE_PAY_TO` (default = same EOA) |
-| Scheme | `exact` (gasless EIP-3009) | same |
-| Facilitator | `https://api.x402.celo.org` | CDP `https://api.cdp.coinbase.com/platform/v2/x402` |
-| Auth | `X402_FACILITATOR_API_KEY` | `COINBASE_API_KEY_BASE` + `COINBASE_SECRET_BASE` (JWT) |
+| Field | Celo (Track 2) | Base | BNB (optional) |
+|-------|----------------|------|----------------|
+| Network | `eip155:42220` | `eip155:8453` | `eip155:56` |
+| Asset | USDC 6 dec | USDC 6 dec | USDC 18 dec |
+| Price | `$0.05` | same | same (`5e16` atomic) |
+| Scheme | `exact` EIP-3009 | same | `exact` **Permit2** |
+| Facilitator | `api.x402.celo.org` | CDP | Dexter `x402.dexter.cash` |
 
-Enable Celo with `X402_ENABLED=true`. Enable Base with `X402_BASE_ENABLED=true` plus CDP Live keys. If Base keys are missing, the paywall stays Celo-only (warning in logs). Track 2 attribution remains Celo settlements only.
+BNB is **live in prod** (`X402_BNB_ENABLED=true`). Receipt NFT: [`0x4e430fB5A5f26ED08eC123373Cd8AD3cE15C24c7`](https://bscscan.com/address/0x4e430fB5A5f26ED08eC123373Cd8AD3cE15C24c7). Deploy helper: [push_x402_bnb.ps1](../deploy/push_x402_bnb.ps1). See [bnb-x402-receipt.md](bnb-x402-receipt.md). Track 2 attribution remains Celo-only. 402 smoke lists Base, Celo, then `eip155:56`.
 
 Pass **both** facilitator clients into `x402ResourceServer` (native list). Wrapping Celo+CDP in a single client makes `initialize()` see only Celo `/supported` and the Base option returns HTTP 500.
 
@@ -272,7 +270,7 @@ x402 v2: the 402 JSON body may be `{}`; `accepts` live in the `PAYMENT-REQUIRED`
 
 Bazaar deploy to EC2: [push_cdp_bazaar.ps1](../deploy/push_cdp_bazaar.ps1) (copies `payments.py` / `agent_card.py`, installs `jsonschema`, restarts `walcert-agent`). Validate the four paid URLs with `POST https://api.cdp.coinbase.com/platform/v2/x402/validate` (`valid: true`, `simulation.outcome: accepted`). Indexing is **not** validate: run a Base settle (`X402_NETWORK=eip155:8453` + [x402_buyer_test.py](../scripts/x402_buyer_test.py)). Celo settlements do not index. 30 days without a CDP settle → delist. Operator notes: [cdp-bazaar.md](cdp-bazaar.md).
 
-Test the buyer with [scripts/x402_buyer_test.py](../scripts/x402_buyer_test.py): `X402_NETWORK=eip155:42220` (Celo USDC) or `eip155:8453` (Base USDC). Set `X402_ENABLED=false` to bypass the paywall (e.g. for local E2E).
+Test the buyer with [scripts/x402_buyer_test.py](../scripts/x402_buyer_test.py): `X402_NETWORK=eip155:42220` (Celo), `eip155:8453` (Base), or `eip155:56` (BNB Permit2). Set `X402_ENABLED=false` to bypass the paywall (e.g. for local E2E).
 
 ---
 

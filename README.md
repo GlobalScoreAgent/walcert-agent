@@ -32,6 +32,7 @@ Full documentation:
 - Summit BSG2026 channel (dedicated key, no x402, expires 2026-08-01): [docs/bsg2026-summit.md](docs/bsg2026-summit.md)
 - Concordium CIS-8004 registration: [docs/concordium-cis8004.md](docs/concordium-cis8004.md) · runbook: [docs/concordium-ops-runbook.md](docs/concordium-ops-runbook.md) · public card: `/agent-card.json`
 - CDP Bazaar / agentic.market discovery: [docs/cdp-bazaar.md](docs/cdp-bazaar.md)
+- BNB x402 (Permit2) + receipt NFT: [docs/bnb-x402-receipt.md](docs/bnb-x402-receipt.md)
 
 ## Architecture
 
@@ -42,7 +43,7 @@ flowchart LR
   Agent -->|"providers"| Providers["Alchemy / Moralis / Zerion"]
   Agent -->|"scoring (Bearer secret)"| Edge["Supabase Edge Functions"]
   Edge -->|"label lookup RPC"| DB["Supabase (walcert / wallets)"]
-  Agent -->|"x402 verify + settle"| Facilitator["x402.celo.org (Celo) / CDP (Base)"]
+  Agent -->|"x402 verify + settle"| Facilitator["x402.celo.org (Celo) / CDP (Base) / Dexter (BNB Permit2)"]
 ```
 
 The agent fetches raw data from the providers, forwards it to the corresponding Supabase Edge Function for scoring (authenticated with a shared secret), and returns the graded certificate.
@@ -52,11 +53,14 @@ The agent fetches raw data from the providers, forwards it to the corresponding 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/` | none | **Agent card** JSON (bilingual eng/esp) — discovery, not a UI |
+| GET | `/.well-known/ai-tool/{slug}.json` | none | **ERC-8257** Tool Manifest (origins/activity/multichain/portfolio) |
 | GET | `/health` | none | Liveness check |
 | GET | `/v1/quota` | none | Provider quota snapshot |
 | POST | `/v1/preview/{type}` | none | **Free** preview: A–F grade only (`origins`/`activity`; IP rate-limited) |
 | POST | `/v1/certificates/{type}` | **x402** | Full signed certificate |
 | POST | `/v1/verify` | none | Public hybrid verify by `tx_hash` (DB + Celo + EIP-712 via Edge) |
+
+ERC-8257 toolIds (Owner-registered): **Base** origins `485` / activity `486` / multichain `487` / portfolio `488`; **Ethereum** `163`–`166` (Agent City). ERC-8004 Eth agentId `50032` (Celo `9699` unchanged). See [docs/erc8257-tools.md](docs/erc8257-tools.md).
 
 `{type}` for **paid** certificates is one of `origins`, `activity`, `multichain`, `portfolio`. Free preview only allows `origins` and `activity` (`multichain`/`portfolio` → 403). Request body:
 
@@ -76,22 +80,22 @@ The agent is a thin facade: Supabase Edge Function `walcert-certificate-verify` 
 
 Offline CLI (JSON in hand): `python scripts/verify_certificate.py path/to/certificate.json`.
 
-## x402 payments (Celo + Base)
+## x402 payments (Celo + Base + BNB)
 
-The `/v1/certificates/*` endpoints are protected by an x402 paywall. A request without payment returns **402** with two options (when Base is enabled); the client pays on one network.
+The `/v1/certificates/*` endpoints are protected by an x402 paywall. A request without payment returns **402**; the client pays on **one** network.
 
-| Field | Celo (Track 2) | Base |
-|-------|----------------|------|
-| Network | `eip155:42220` | `eip155:8453` |
-| Asset | USDC `0xcebA9300f2b948710d2653dD7B07f33A8B32118C` | USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
-| Price | `$0.05` | `$0.05` |
-| Pay to | `0xF4D938200445B0Df0f028af6d90D016147AEd095` | same EOA |
-| Scheme | `exact` (gasless EIP-3009) | same |
-| Facilitator | `https://api.x402.celo.org` | CDP `https://api.cdp.coinbase.com/platform/v2/x402` |
+| Field | Celo (Track 2) | Base | BNB |
+|-------|----------------|------|-----|
+| Network | `eip155:42220` | `eip155:8453` | `eip155:56` |
+| Asset | USDC 6 dec | USDC 6 dec | Binance-Peg USDC 18 dec `0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d` |
+| Price | `$0.05` | `$0.05` | `$0.05` (`5e16` atomic) |
+| Pay to | `0xF4D938200445B0Df0f028af6d90D016147AEd095` | same EOA | same EOA |
+| Scheme | `exact` (EIP-3009) | same | `exact` **Permit2** |
+| Facilitator | `https://api.x402.celo.org` | CDP | Dexter `https://x402.dexter.cash` |
 
-Flow: a request without payment returns `402`. In x402 v2 the JSON body may be `{}`; payment options are in the `PAYMENT-REQUIRED` header (base64 JSON). When Base/CDP is enabled, `accepts[0]` is Base (`eip155:8453`) and Celo is second (CDP Bazaar validate reads the first option; Celo/Track 2 stay available). Paid routes declare Python-opt-in Bazaar discovery metadata. The client signs an EIP-3009 authorization on **one** network and retries with the payment header; the agent verifies and settles via that network's facilitator and returns `200` with the certificate. Settled payments are logged to `walcert.x402_payments` (`network` / `facilitator` distinguish Celo vs Base). Track 2 hackathon credit is Celo-only.
+`accepts[0]` is **Base** (CDP Bazaar). Celo is second. **BNB is third** (`X402_BNB_ENABLED=true` in prod). After a BNB settle the JSON includes `certificate.receipt` (EIP-712 voucher). The **payer** calls `claim` on the soulbound NFT [`0x4e430fB5…24c7`](https://bscscan.com/address/0x4e430fB5A5f26ED08eC123373Cd8AD3cE15C24c7). Mint `From` is the zero address; **gas is paid by the claimant** (not the $0.05 USDC). Celo `giveFeedback` is unchanged. Details: [docs/bnb-x402-receipt.md](docs/bnb-x402-receipt.md).
 
-See [scripts/x402_buyer_test.py](scripts/x402_buyer_test.py) for a reference buyer (`X402_NETWORK=eip155:42220` or `eip155:8453`).
+See [scripts/x402_buyer_test.py](scripts/x402_buyer_test.py) (`X402_NETWORK=eip155:42220`, `eip155:8453`, or `eip155:56`).
 
 ## CDP Bazaar / agentic.market
 
@@ -192,7 +196,7 @@ app/
   models.py                   # Pydantic models
   services.py                 # Orchestration (providers -> edge scoring -> certify)
   internal_access.py          # Marketplace + Summit Bearer auth + attribution context
-  payments.py                 # x402 paywall (Celo + Base/CDP; bypass for internal/summit)
+  payments.py                 # x402 paywall (Celo + Base/CDP + optional BNB Permit2)
   payment_log.py              # x402 settlement logging middleware
   onchain.py                  # EIP-712 signing + ERC-8004 giveFeedback anchoring
   onchain_log.py              # Background client: persist onchain block to Supabase

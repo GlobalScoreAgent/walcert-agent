@@ -5,7 +5,7 @@ Walcert Agent is an ERC-8004 agent on **Celo**, built by **Global Score Agent**,
 Scoring runs on **Supabase Edge Functions** (one per certificate type) and is enriched with labeled address lists (CEX, bridges, mixers and OFAC sanctions) stored in Supabase.
 
 - **Free preview** (`POST /v1/preview/{type}`): only `origins` and `activity` (Alchemy). Returns the A–F grade only, no metrics or signature, no payment. Rate limit: 8 req/IP per 15 min. `multichain` and `portfolio` → 403 (use the paid endpoint).
-- **Full certificate** (`POST /v1/certificates/{type}`): returns the signed certificate (metrics + `data_hash`). Requires an **x402 payment** of **0.05 USDC on Celo mainnet or Base mainnet** (gasless EIP-3009; Celo via `x402.celo.org`, Base via the CDP facilitator).
+- **Full certificate** (`POST /v1/certificates/{type}`): returns the signed certificate (metrics + `data_hash`). Requires an **x402 payment** of **0.05 USDC** on **Celo**, **Base**, or **BNB** (`eip155:56`, Binance-Peg USDC, Permit2 via Dexter). Celo/Base: EIP-3009. BNB: one-time Permit2 `approve`; the 200 includes `certificate.receipt` (voucher for the soulbound NFT `claim`). Mint gas is paid in **BNB by the client** (not taken from the $0.05). Celo `giveFeedback` is unchanged.
 
 All certificate texts (`summary`, `grade_label`, `strengths`, `concerns`) are **bilingual**, shaped as `{ "eng": "...", "esp": "..." }`.
 

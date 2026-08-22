@@ -45,12 +45,18 @@ Deno.serve(async (req: Request) => {
   }
 
   const onchainObj = onchain as Record<string, unknown>;
+  const receiptBnb = body.receipt_bnb;
   const update: Record<string, unknown> = {
     onchain: onchainObj,
     signature: body.signature ?? null,
     onchain_tx_hash: str(body.tx_hash) ?? str(onchainObj.tx_hash),
     onchain_updated_at: new Date().toISOString(),
   };
+  if (receiptBnb && typeof receiptBnb === "object") {
+    update.receipt_bnb = receiptBnb;
+    const dh = str((receiptBnb as Record<string, unknown>).data_hash);
+    if (dh) update.data_hash = dh;
+  }
 
   try {
     const client = getServiceClient();

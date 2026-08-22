@@ -10,12 +10,14 @@ Uso (PowerShell):
     $env:X402_BUYER_PRIVATE_KEY = "<llave_privada del comprador con USDC>"
     # Celo (default): $env:X402_NETWORK = "eip155:42220"
     # Base:           $env:X402_NETWORK = "eip155:8453"
+    # BNB Permit2:   $env:X402_NETWORK = "eip155:56"
     python scripts/x402_buyer_test.py [cert_type] [target_wallet]
 
 Requisitos:
   - Wallet compradora con >= precio en USDC en la red elegida.
   - Server con X402_ENABLED=true. Celo: X402_FACILITATOR_API_KEY.
     Base: COINBASE_API_KEY_BASE + COINBASE_SECRET_BASE.
+    BNB: X402_BNB_ENABLED=true (Permit2; primer approve al contrato Permit2).
 """
 
 from __future__ import annotations
@@ -47,6 +49,7 @@ AGENT_BASE_URL = os.getenv("AGENT_BASE_URL", "http://127.0.0.1:8011").rstrip("/"
 NETWORK = os.getenv("X402_NETWORK", "eip155:42220").strip()
 CELO_RPC_URL = os.getenv("CELO_RPC_URL", "https://forno.celo.org")
 BASE_RPC_URL = os.getenv("BASE_RPC_URL", "https://mainnet.base.org")
+BNB_RPC_URL = os.getenv("BNB_RPC_URL", "https://bsc-dataseed.binance.org")
 
 # Config de red (Celo no viene por defecto en x402). name/version verificados
 # on-chain contra los contratos USDC.
@@ -69,6 +72,17 @@ _NETWORK_CFG = {
             "name": "USDC",
             "version": "2",
             "decimals": 6,
+        },
+    },
+    "eip155:56": {
+        "chain_id": 56,
+        "rpc": BNB_RPC_URL,
+        "default_asset": {
+            "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+            "name": "USD Coin",
+            "version": "2",
+            "decimals": 18,
+            "asset_transfer_method": "permit2",
         },
     },
     "eip155:8453": {
@@ -142,8 +156,17 @@ def main() -> None:
     # Cliente x402 con el esquema exact EVM y el signer de la wallet.
     rpc = (_NETWORK_CFG.get(NETWORK) or {}).get("rpc") or CELO_RPC_URL
     signer = EthAccountSignerWithRPC(account, rpc)
-    client = x402ClientSync()
+    def _pick_network(_ver, accepts):
+        for item in accepts:
+            net = getattr(item, "network", None)
+            if net == NETWORK:
+                return item
+        return accepts[0]
+
+    client = x402ClientSync(payment_requirements_selector=_pick_network)
     client.register(NETWORK, ExactEvmClientScheme(signer))
+    if hasattr(client, "set_spend_controls"):
+        client.set_spend_controls(False)
     http_client = x402HTTPClientSync(client)
 
     url = f"{AGENT_BASE_URL}/v1/certificates/{cert_type}"
@@ -170,11 +193,13 @@ def main() -> None:
 
         # 2) Construir y firmar el pago; 3) reintentar con X-PAYMENT
         pay_headers, _payload = http_client.handle_402_response(
-            dict(r1.headers), r1.content
+            dict(r1.headers), r1.content, url
         )
-        print("\n[2] Pago firmado (EIP-3009). Reintentando con X-PAYMENT...")
+        print("\n[2] Pago firmado. Reintentando con X-PAYMENT...")
         r2 = hc.post(url, headers={**base_headers, **pay_headers}, json=payload)
         print(f"[3] Con pago -> HTTP {r2.status_code}")
+        if r2.status_code != 200:
+            print("    r2 headers:", {k: v[:80] for k, v in r2.headers.items() if "payment" in k.lower() or k.lower() in ("x-error", "www-authenticate")})
 
         settle = r2.headers.get(PAYMENT_RESPONSE_HEADER)
         if settle:
@@ -196,6 +221,7 @@ def main() -> None:
                         "grade": cert.get("grade"),
                         "grade_label": cert.get("grade_label"),
                         "certificate_id": cert.get("certificate_id"),
+                        "receipt": cert.get("receipt"),
                     },
                     indent=2,
                     default=str,

@@ -115,6 +115,15 @@ class Settings:
     coinbase_api_key_base: str
     coinbase_secret_base: str
     x402_base_ready: bool
+    x402_bnb_enabled: bool
+    x402_bnb_network: str
+    x402_bnb_facilitator_url: str
+    x402_bnb_pay_to: str
+    x402_bnb_usdc: str
+    x402_bnb_ready: bool
+    bnb_chain_id: int
+    bnb_receipt_enabled: bool
+    bnb_receipt_contract: str
     payment_log_enabled: bool
     payment_log_slug: str
     celo_rpc_url: str
@@ -263,6 +272,29 @@ class Settings:
             and bool(self.coinbase_api_key_base)
             and bool(self.coinbase_secret_base)
         )
+
+        # x402 BNB (Dexter + Permit2; USDC 18 decimals). Third accepts[] rail;
+        # never first — CDP Bazaar reads accepts[0].
+        self.x402_bnb_enabled = os.getenv(
+            "X402_BNB_ENABLED", "false"
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        self.x402_bnb_network = os.getenv("X402_BNB_NETWORK", "eip155:56").strip()
+        self.x402_bnb_facilitator_url = os.getenv(
+            "X402_BNB_FACILITATOR_URL", "https://x402.dexter.cash"
+        ).strip().rstrip("/")
+        self.x402_bnb_pay_to = os.getenv(
+            "X402_BNB_PAY_TO", self.x402_pay_to
+        ).strip()
+        self.x402_bnb_usdc = os.getenv(
+            "X402_BNB_USDC",
+            "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+        ).strip()
+        self.x402_bnb_ready = self.x402_bnb_enabled
+        self.bnb_chain_id = int(os.getenv("BNB_CHAIN_ID", "56"))
+        self.bnb_receipt_enabled = os.getenv(
+            "BNB_RECEIPT_ENABLED", "true"
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        self.bnb_receipt_contract = os.getenv("BNB_RECEIPT_CONTRACT", "").strip()
 
         # Registro de compras x402: el agente NO escribe en la BD. Arma la fila
         # y la envia a la Edge Function walcert-payment-log (reusa

@@ -533,6 +533,7 @@ La respuesta HTTP del agente incluye `analysis` + `certificate` (grade A–F). V
 Solo en los certificados **pagados** (`POST /v1/certificates/*`). El preview gratis no los incluye. Ambos bloques se agregan DESPUES de calcular `data_hash`, por lo que no alteran el hash.
 
 - **`signature`** (EIP-712): firma de la wallet del agente sobre el `data_hash` y campos clave del certificado. Se verifica recuperando el firmante y comparando con `signature.signer`. Autenticidad instantanea, sin gas.
+- **`receipt`** (solo pago x402 **BNB**): voucher EIP-712 para `claim` del NFT soulbound [`0x4e430fB5…24c7`](https://bscscan.com/address/0x4e430fB5A5f26ED08eC123373Cd8AD3cE15C24c7). Se arma desde el header `PAYMENT-SIGNATURE` (red + pagador). `data_hash` / `delivery_hash` = mismo bytes32 que el certificado (futuro `deliveryHash` AACP TermiX). Pagos Celo/Base no incluyen este campo. El mint BscScan muestra `From: 0x000…0` (acuñación); el gas lo paga el claimant.
 - **`onchain`** (ERC-8004 Reputation Registry en Celo): por cada certificado se llama `giveFeedback` desde una wallet monitor dedicada (distinta al owner del `agentId`). El `feedbackHash` transporta el `data_hash` (prueba on-chain de emision) y `value/value_decimals` el monto pagado, de modo que `getSummary(agentId, "certificate_issued")` expone a la vez el conteo de certificados y los ingresos acumulados. Si el anclaje falla, `onchain.status = "failed"` y el certificado igual se entrega firmado.
 
 Verificacion independiente:

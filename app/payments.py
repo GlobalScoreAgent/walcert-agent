@@ -15,6 +15,34 @@ from app.models import CERTIFICATE_TYPES, PROVIDER_BY_TYPE
 
 logger = logging.getLogger("walcert.x402")
 
+BNB_NETWORK_CONFIGS: dict[str, dict] = {
+    "eip155:56": {
+        "chain_id": 56,
+        "default_asset": {
+            "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+            "name": "USD Coin",
+            "version": "2",
+            "decimals": 18,
+            "asset_transfer_method": "permit2",
+        },
+    },
+}
+
+
+def _register_bnb_networks(usdc: str | None = None) -> None:
+    """Inyecta BSC Permit2 (18 dec) en el registro x402 (idempotente)."""
+    from x402.mechanisms.evm import constants as evm_constants
+
+    cfg = BNB_NETWORK_CONFIGS["eip155:56"]
+    if usdc:
+        asset = dict(cfg["default_asset"])
+        asset["address"] = usdc
+        cfg = {"chain_id": 56, "default_asset": asset}
+    current = evm_constants.NETWORK_CONFIGS.get("eip155:56")
+    if not current or current.get("default_asset", {}).get("decimals") != 18:
+        evm_constants.NETWORK_CONFIGS["eip155:56"] = cfg
+
+
 CELO_NETWORK_CONFIGS: dict[str, dict] = {
     "eip155:42220": {
         "chain_id": 42220,
@@ -69,8 +97,15 @@ def facilitator_url_for_network(settings: Settings, network: str | None) -> str:
     """URL del facilitador que liquido, segun CAIP-2 de la requirements."""
     net = (network or "").strip().lower()
     base_net = (settings.x402_base_network or "").strip().lower()
+    bnb_net = (getattr(settings, "x402_bnb_network", None) or "").strip().lower()
     if net and (net == base_net or net.endswith(":8453") or "8453" in net):
         return settings.x402_base_facilitator_url
+    if net and (
+        net == bnb_net or net.endswith(":56") or net == "bsc" or "eip155:56" in net
+    ):
+        return getattr(
+            settings, "x402_bnb_facilitator_url", settings.x402_facilitator_url
+        )
     return settings.x402_facilitator_url
 
 
@@ -131,8 +166,29 @@ BAZAAR_DESCRIPTIONS: dict[str, str] = {
 _EXAMPLE_WALLET = "0x2eFC66c0a78620Dd254443998BF2f11B685602E3"
 
 
-def _payment_accepts(settings: Settings, *, include_base: bool) -> list[Any]:
-    """PaymentOption list. When Base is on, Base is first (CDP validate reads [0])."""
+def _bnb_payment_option(settings: Settings):
+    from x402.http import PaymentOption
+
+    kwargs = dict(
+        scheme="exact",
+        pay_to=settings.x402_bnb_pay_to,
+        price=settings.x402_price,
+        network=settings.x402_bnb_network,
+    )
+    extra = {"assetTransferMethod": "permit2"}
+    try:
+        return PaymentOption(**kwargs, extra=extra)
+    except TypeError:
+        try:
+            return PaymentOption(**kwargs, extra=extra)
+        except TypeError:
+            return PaymentOption(**kwargs)
+
+
+def _payment_accepts(
+    settings: Settings, *, include_base: bool, include_bnb: bool = False
+) -> list[Any]:
+    """PaymentOption list. Base first when on (CDP Bazaar reads [0]); BNB last."""
     from x402.http import PaymentOption
 
     celo = PaymentOption(
@@ -141,15 +197,20 @@ def _payment_accepts(settings: Settings, *, include_base: bool) -> list[Any]:
         price=settings.x402_price,
         network=settings.x402_network,
     )
-    if not include_base:
-        return [celo]
-    base = PaymentOption(
-        scheme="exact",
-        pay_to=settings.x402_base_pay_to,
-        price=settings.x402_price,
-        network=settings.x402_base_network,
-    )
-    return [base, celo]
+    options: list[Any] = []
+    if include_base:
+        options.append(
+            PaymentOption(
+                scheme="exact",
+                pay_to=settings.x402_base_pay_to,
+                price=settings.x402_price,
+                network=settings.x402_base_network,
+            )
+        )
+    options.append(celo)
+    if include_bnb:
+        options.append(_bnb_payment_option(settings))
+    return options
 
 
 def _bazaar_output_example(cert_type: str) -> dict[str, Any]:
@@ -253,6 +314,8 @@ def install_x402(app) -> bool:
         return False
 
     _register_celo_networks()
+    if settings.x402_bnb_enabled:
+        _register_bnb_networks(settings.x402_bnb_usdc)
 
     celo_client = HTTPFacilitatorClient(
         FacilitatorConfig(
@@ -280,6 +343,26 @@ def install_x402(app) -> bool:
             "COINBASE_API_KEY_BASE / COINBASE_SECRET_BASE; solo Celo."
         )
 
+    include_bnb = False
+    if settings.x402_bnb_enabled:
+        try:
+            from x402.http import FacilitatorConfig, HTTPFacilitatorClient
+
+            bnb_client = HTTPFacilitatorClient(
+                FacilitatorConfig(url=settings.x402_bnb_facilitator_url)
+            )
+            clients[settings.x402_bnb_network] = bnb_client
+            include_bnb = True
+            logger.info(
+                "x402 BNB habilitado: red=%s facilitador=%s payTo=%s permit2",
+                settings.x402_bnb_network,
+                settings.x402_bnb_facilitator_url,
+                settings.x402_bnb_pay_to,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("x402 BNB no se pudo montar (%s); Celo/Base siguen.", exc)
+            include_bnb = False
+
     # Native multi-client: initialize() llama get_supported() en cada uno y
     # enruta verify/settle por red. Un solo wrapper solo veia Celo /supported
     # y el 402 de Base reventaba (RouteConfigurationError).
@@ -287,6 +370,11 @@ def install_x402(app) -> bool:
     server.register(settings.x402_network, ExactEvmServerScheme())
     if settings.x402_base_network in clients and settings.x402_base_network != settings.x402_network:
         server.register(settings.x402_base_network, ExactEvmServerScheme())
+    if include_bnb and settings.x402_bnb_network not in (
+        settings.x402_network,
+        settings.x402_base_network,
+    ):
+        server.register(settings.x402_bnb_network, ExactEvmServerScheme())
 
     include_base = (
         settings.x402_base_network in clients
@@ -305,7 +393,9 @@ def install_x402(app) -> bool:
     else:
         include_base_bazaar = False
 
-    accepts = _payment_accepts(settings, include_base=include_base)
+    accepts = _payment_accepts(
+        settings, include_base=include_base, include_bnb=include_bnb
+    )
 
     routes: dict[str, Any] = {}
     for cert_type in CERTIFICATE_TYPES:
@@ -315,9 +405,10 @@ def install_x402(app) -> bool:
 
     app.add_middleware(_SkipX402IfInternalASGI, routes=routes, server=server)
     logger.info(
-        "x402 montado (bypass interno/summit): red=%s extra=%s bazaar=%s precio=%s payTo=%s facilitador=%s",
+        "x402 montado (bypass interno/summit): red=%s extra=%s bnb=%s bazaar=%s precio=%s payTo=%s facilitador=%s",
         settings.x402_network,
         settings.x402_base_network if include_base else None,
+        settings.x402_bnb_network if include_bnb else None,
         include_base_bazaar,
         settings.x402_price,
         settings.x402_pay_to,
