@@ -28,7 +28,7 @@ skills/walcert/
 Install (Bankr terminal):
 
 ```
-install the walcert skill from https://github.com/GlobalScoreAgent/walcert-skill/tree/main/skills/walcert
+install the walcert skill from https://github.com/GlobalScoreAgent/walcert-skill
 ```
 
 ## Allowed

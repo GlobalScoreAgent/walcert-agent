@@ -14,10 +14,10 @@ Given a wallet address, the agent runs a fresh analysis and returns a signed cer
 |------|-------------------|---------------|
 | `origins` | Source of funds — **`origins-v2.2`**: 9 signals, value-relevant coverage, concentration in grade | Alchemy + DefiLlama + labels |
 | `activity` | Recent activity — **`activity-v2.1`**: 15d window, 11 signals, HHI D@0.70 | Alchemy + DefiLlama + labels |
-| `multichain` | Multichain — **`multichain-v1.5`**: footprint / longevity (public) | Moralis (+ Celo via Alchemy) |
+| `multichain` | Multichain — **`multichain-v2.1`**: footprint / longevity / sampled intensity (public) | GoldRush (Celo native) |
 | `portfolio` | Portfolio — **`portfolio-v2.2`**: dual totals credible/raw, HHI, tiers | Zerion |
 
-**Summit-only:** `POST /v1/summit/certificates/multichain-v2` — **`multichain-v2.1`** (GoldRush footprint + intensity; not on agent card / x402). See [docs/bsg2026-summit.md](docs/bsg2026-summit.md).
+**Summit alias:** `POST /v1/summit/certificates/multichain-v2` is the same GoldRush `multichain-v2.1` pipeline (Summit auth, no x402). See [docs/bsg2026-summit.md](docs/bsg2026-summit.md).
 
 All certificate texts (`summary`, `grade_label`, `strengths`, `concerns`) are **bilingual** (`{ "eng": "...", "esp": "..." }`).
 
@@ -33,7 +33,7 @@ Full documentation:
 - Concordium CIS-8004 registration: [docs/concordium-cis8004.md](docs/concordium-cis8004.md) · runbook: [docs/concordium-ops-runbook.md](docs/concordium-ops-runbook.md) · public card: `/agent-card.json`
 - CDP Bazaar / agentic.market discovery: [docs/cdp-bazaar.md](docs/cdp-bazaar.md)
 - BNB x402 (Permit2) + receipt NFT: [docs/bnb-x402-receipt.md](docs/bnb-x402-receipt.md)
-- Bankr runtime (thin skill, not x402 Cloud wrap): [docs/bankr-skill.md](docs/bankr-skill.md) · public install: [GlobalScoreAgent/walcert-skill](https://github.com/GlobalScoreAgent/walcert-skill/tree/main/skills/walcert)
+- Bankr runtime (thin skill, not x402 Cloud wrap): [docs/bankr-skill.md](docs/bankr-skill.md) · public install: [GlobalScoreAgent/walcert-skill](https://github.com/GlobalScoreAgent/walcert-skill)
 
 ## Architecture
 
@@ -41,7 +41,7 @@ Full documentation:
 flowchart LR
   Client["Client / Agent"] -->|"POST /v1/certificates/{type} (x402)"| Agent["Walcert Agent (FastAPI on EC2)"]
   Client -->|"POST /v1/preview/{type} (free)"| Agent
-  Agent -->|"providers"| Providers["Alchemy / Moralis / Zerion"]
+  Agent -->|"providers"| Providers["Alchemy / GoldRush / Zerion"]
   Agent -->|"scoring (Bearer secret)"| Edge["Supabase Edge Functions"]
   Edge -->|"label lookup RPC"| DB["Supabase (walcert / wallets)"]
   Agent -->|"x402 verify + settle"| Facilitator["x402.celo.org (Celo) / CDP (Base) / Dexter (BNB Permit2)"]
@@ -140,13 +140,13 @@ python -m venv .venv
 # source .venv/bin/activate
 pip install -r requirements.txt
 copy .env.example .env    # cp on macOS/Linux
-# Fill in: ALCHEMY_API_KEY, MORALIS_API_KEY, ZERION_API_KEY, EDGE_SHARED_SECRET, ...
+# Fill in: ALCHEMY_API_KEY, GOLDRUSH_API_KEY, ZERION_API_KEY, EDGE_SHARED_SECRET, ...
 uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
 Key environment variables (see [.env.example](.env.example)):
 
-- Providers: `ALCHEMY_API_KEY`, `ALCHEMY_NETWORKS`, `MORALIS_API_KEY`, `ZERION_API_KEY`
+- Providers: `ALCHEMY_API_KEY`, `ALCHEMY_NETWORKS`, `GOLDRUSH_API_KEY`, `ZERION_API_KEY`
 - Edge scoring: `SUPABASE_FUNCTIONS_URL`, `EDGE_SHARED_SECRET`, `EDGE_SCORING_ENABLED`
 - x402: `X402_ENABLED`, `X402_NETWORK`, `X402_FACILITATOR_URL`, `X402_FACILITATOR_API_KEY`, `X402_PAY_TO`, `X402_PRICE`, `X402_BASE_ENABLED`, `COINBASE_API_KEY_BASE`, `COINBASE_SECRET_BASE`
 - Payment logging: `PAYMENT_LOG_ENABLED`, `PAYMENT_LOG_SLUG`
@@ -177,7 +177,7 @@ curl -s -X POST https://walcert.globalscoreagent.com/v1/certificates/origins \
 | Provider | Limit | Unit |
 |----------|-------|------|
 | Zerion | 2,000 / day | calls |
-| Moralis | 40,000 / day | CU (`50 CU × chains`) |
+| GoldRush | 500 / day | analyses (circuit-breaker, not a billing cap) |
 | Alchemy | 30,000,000 / month | CU (`120 CU` per `alchemy_getAssetTransfers`) |
 
 Usage is persisted in `data/quota_usage.json` (git-ignored).
@@ -202,7 +202,7 @@ app/
   onchain.py                  # EIP-712 signing + ERC-8004 giveFeedback anchoring
   onchain_log.py              # Background client: persist onchain block to Supabase
   routes/certificates.py      # /v1/preview + /v1/certificates + /health
-  providers/                  # alchemy, moralis, zerion, edge_scoring, quota, cache
+  providers/                  # alchemy, goldrush, zerion, edge_scoring, quota, cache
 supabase/functions/           # Edge Functions (scoring, payment-log, onchain) + _shared
 integrations/virtuals-acp/    # ACP serve handlers (marketplace adapter)
 agent/registration.json       # ERC-8004 registration document
