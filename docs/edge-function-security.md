@@ -10,7 +10,7 @@ Requisitos para que el motor de scoring (Supabase Edge Function u equivalente) s
 Cliente ──► Agente (VPS) ──► Edge Function (scoring)
                  ▲                    ▲
                  │                    └── secretos / auth server-side
-                 └── API keys de Alchemy/Moralis/Zerion
+                 └── API keys de Alchemy/GoldRush/Zerion
 ```
 
 - El **cliente nunca** llama a la Edge Function.
@@ -217,7 +217,7 @@ X-Walcert-Signature: <hex hmac>   # recomendado
 ## Qué NO hacer
 
 1. Poner la URL de la Edge en metadata pública / agent card / IPFS  
-2. Usar la misma key de Alchemy/Moralis/Zerion dentro de la Edge (en el diseño actual el agente ya trae el semicrudo)  
+2. Usar la misma key de Alchemy/GoldRush/Zerion dentro de la Edge (en el diseño actual el agente ya trae el semicrudo)  
 3. Confiar solo en “security through obscurity”  
 4. Devolver el código fuente o prompts del modelo de scoring en la respuesta  
 5. Commitear `.env` con `EDGE_SHARED_SECRET`

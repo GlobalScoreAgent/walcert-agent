@@ -28,7 +28,7 @@ Facts for agents after reading vault notes. Prefer vault + repo docs if anything
 |------|----------|--------|
 | `origins` | Alchemy `alchemy_getAssetTransfers` | Labels via Edge / `wallets.*` |
 | `activity` | Alchemy Transfers (~7d client window) | Same |
-| `multichain` | Moralis `/wallets/{addr}/chains` | Celo merged separately |
+| `multichain` | GoldRush `/activity/` + `transactions_summary` | Celo nativo; intensity top N |
 | `portfolio` | Zerion | Positions |
 
 BSC Transfers via Alchemy confirmed HTTP 200 in production logs (Jul 2026). Gnosis / X Layer not in agent config yet.
@@ -46,7 +46,7 @@ Identity defaults (agent `config.py` + Edge `issuer()`): `AGENT_ID`/`WALCERT_ERC
 
 ## Edge Functions (Bearer shared secret)
 
-`walcert-certificate-{origins,activity,multichain,portfolio}`, `walcert-payment-log`, `walcert-certificate-onchain`.
+`walcert-certificate-{origins,activity,multichain,multichain-v2,portfolio}`, `walcert-payment-log`, `walcert-certificate-onchain`.
 
 ## x402
 
@@ -71,4 +71,4 @@ After Edge `data_hash`: EIP-712 sign + `giveFeedback` (`feedbackHash` = `data_ha
 
 ## Key env flag names (never commit values)
 
-`EDGE_SHARED_SECRET`, `X402_ENABLED`, `X402_BASE_ENABLED`, `COINBASE_API_KEY_BASE`, `COINBASE_SECRET_BASE`, `CERT_SIGNING_ENABLED`, `ONCHAIN_ANCHOR_ENABLED`, `AGENT_SIGNER_KEY`, `PAYMENT_LOG_ENABLED`, `ONCHAIN_LOG_ENABLED`.
+`EDGE_SHARED_SECRET`, `X402_ENABLED`, `X402_BASE_ENABLED`, `COINBASE_API_KEY_BASE`, `COINBASE_SECRET_BASE`, `CERT_SIGNING_ENABLED`, `ONCHAIN_ANCHOR_ENABLED`, `AGENT_SIGNER_KEY`, `PAYMENT_LOG_ENABLED`, `ONCHAIN_LOG_ENABLED`, `GOLDRUSH_API_KEY`, `GOLDRUSH_DAILY_LIMIT`.

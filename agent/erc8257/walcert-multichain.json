@@ -1,0 +1,52 @@
+{
+  "type": "https://ercs.ethereum.org/ERCS/erc-8257#tool-manifest-v1",
+  "name": "walcert-multichain",
+  "description": "Issues an A–F Multichain wallet-maturity certificate (footprint, longevity and sampled transaction intensity across EVM chains) via Walcert hot-analysis. Paid with x402 USDC on Celo or Base; returns signed certificate with on-chain ERC-8004 anchor.",
+  "endpoint": "https://walcert.globalscoreagent.com/v1/certificates/multichain",
+  "version": "1.0.0",
+  "tags": ["wallet", "reputation", "certificate", "x402", "multichain"],
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "wallet_address": {
+        "type": "string",
+        "description": "EVM wallet address (0x…) to analyze for multichain footprint"
+      }
+    },
+    "required": ["wallet_address"]
+  },
+  "outputs": {
+    "type": "object",
+    "properties": {
+      "available": { "type": "boolean" },
+      "status": { "type": "string" },
+      "certificate_type": { "type": "string" },
+      "provider": { "type": "string" },
+      "certificate": {
+        "type": "object",
+        "properties": {
+          "grade": { "type": "string" },
+          "certificate_id": { "type": "string" },
+          "data_hash": { "type": "string" }
+        }
+      },
+      "signature": { "type": "object" },
+      "onchain": { "type": "object" }
+    }
+  },
+  "pricing": [
+    {
+      "amount": "50000",
+      "asset": "eip155:8453/erc20:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "recipient": "eip155:8453:0xf4d938200445b0df0f028af6d90d016147aed095",
+      "protocol": "x402"
+    },
+    {
+      "amount": "50000",
+      "asset": "eip155:42220/erc20:0xceba9300f2b948710d2653dd7b07f33a8b32118c",
+      "recipient": "eip155:42220:0xf4d938200445b0df0f028af6d90d016147aed095",
+      "protocol": "x402"
+    }
+  ],
+  "creatorAddress": "0x475f589bd4bfe82b333b8006dcc278f393b8e124"
+}

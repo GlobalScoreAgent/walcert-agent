@@ -19,7 +19,7 @@ verifiability — and the exact order to bring them up.
 flowchart LR
   Client["Client / Agent"] -->|"POST /v1/certificates/{type} (x402)"| Agent["Walcert Agent (FastAPI)"]
   Client -->|"POST /v1/preview/{type} (free)"| Agent
-  Agent -->|"raw data"| Providers["Alchemy / Moralis / Zerion"]
+  Agent -->|"raw data"| Providers["Alchemy / GoldRush / Zerion"]
   Agent -->|"scoring (Bearer secret)"| Edge["Supabase Edge Functions"]
   Edge -->|"label lookup RPC"| DB["Supabase (walcert schema)"]
   Agent -->|"verify + settle"| Facilitator["x402.celo.org (Celo) / CDP (Base) / Dexter (BNB Permit2)"]
@@ -58,7 +58,7 @@ payments. Preview of `multichain` / `portfolio` returns 403.
 | `app/config.py` | All settings, read from environment |
 | `app/services.py` | Orchestration: providers → edge scoring → certify (sign + anchor) |
 | `app/routes/certificates.py` | `/health`, `/v1/quota`, `/v1/preview/{type}`, `/v1/certificates/{type}`, `/v1/verify` |
-| `app/providers/` | `alchemy`, `moralis`, `zerion`, `edge_scoring`, `quota`, `cache` |
+| `app/providers/` | `alchemy`, `goldrush`, `zerion`, `edge_scoring`, `quota`, `cache` |
 | `app/payments.py` | x402 paywall install (Celo + optional Base/CDP) |
 | `app/payment_log.py` | Middleware that logs settled x402 payments |
 | `app/onchain.py` | EIP-712 signing + ERC-8004 `giveFeedback` anchoring |
@@ -73,8 +73,8 @@ payments. Preview of `multichain` / `portfolio` returns 403.
 | `walcert-alchemy-networks` | Bearer shared secret | Active Alchemy networks from `erc_8004.chains` (Origins v2) |
 | `walcert-certificate-origins` | Bearer shared secret | Score Origins (`origins-v2.2`, value-relevant coverage + concentration grade) |
 | `walcert-certificate-activity` | Bearer shared secret | Score Activity (`activity-v2.1`, 15d, HHI D@0.70) |
-| `walcert-certificate-multichain` | Bearer shared secret | Score Multichain (`multichain-v1.5`, Moralis footprint) |
-| `walcert-certificate-multichain-v2` | Bearer shared secret | Score Multichain (`multichain-v2.1`, GoldRush, Summit-only) |
+| `walcert-certificate-multichain` | Bearer shared secret | Legacy Multichain v1.5 (unused after GoldRush cutover) |
+| `walcert-certificate-multichain-v2` | Bearer shared secret | Score Multichain (`multichain-v2.1`, GoldRush; public + Summit alias) |
 | `walcert-certificate-portfolio` | Bearer shared secret | Score Portfolio (`portfolio-v2.2`, dual totals credible/raw) |
 | `walcert-payment-log` | Bearer shared secret | Persist settled x402 payments (holds service role key) |
 | `walcert-certificate-onchain` | Bearer shared secret | Persist `onchain`/`signature` block to a certificate row |
@@ -116,7 +116,7 @@ The monitor wallet only needs a little **CELO** for gas (`giveFeedback` costs ~0
 - Python **3.11+**
 - A Supabase project (with the `walcert` schema and the `wallets.*` label tables)
 - [Supabase CLI](https://supabase.com/docs/guides/cli) (`supabase --version`)
-- Provider API keys: **Alchemy**, **Moralis**, **Zerion**
+- Provider API keys: **Alchemy**, **GoldRush**, **Zerion**
 - An **x402 facilitator API key** from [x402.celo.org](https://x402.celo.org) (for Celo `/settle`)
 - **CDP Secret API keys** (Live) for Base x402: `COINBASE_API_KEY_BASE` / `COINBASE_SECRET_BASE` from [portal.cdp.coinbase.com](https://portal.cdp.coinbase.com)
 - A **Pinata JWT** (to pin ERC-8004 metadata to IPFS)
@@ -138,7 +138,7 @@ copy .env.example .env     # cp on Linux/Mac
 ```
 
 Fill `.env` (see §6 for the full reference). At minimum for a first boot:
-`ALCHEMY_API_KEY`, `MORALIS_API_KEY`, `ZERION_API_KEY`, `SUPABASE_FUNCTIONS_URL`,
+`ALCHEMY_API_KEY`, `GOLDRUSH_API_KEY`, `ZERION_API_KEY`, `SUPABASE_FUNCTIONS_URL`,
 `EDGE_SHARED_SECRET`, `EDGE_SCORING_ENABLED=true`.
 
 ```bash
@@ -235,14 +235,14 @@ See [.env.example](../.env.example) for the annotated template. Groups:
 | Group | Variables |
 |-------|-----------|
 | Identity | `AGENT_ID` (9699), `AGENT_WALLET` (payTo `0xF4D9…`), `PUBLIC_BASE_URL`, `CELO_CHAIN_ID` |
-| Providers | `ALCHEMY_API_KEY`, `ALCHEMY_NETWORKS`, `MORALIS_API_KEY`, `MORALIS_CHAINS`, `ZERION_API_KEY`, `GOLDRUSH_API_KEY` (Multichain v2 Summit-only) |
+| Providers | `ALCHEMY_API_KEY`, `ALCHEMY_NETWORKS`, `ZERION_API_KEY`, `GOLDRUSH_API_KEY` (public Multichain) |
 | Edge scoring | `SUPABASE_FUNCTIONS_URL`, `EDGE_SHARED_SECRET`, `EDGE_SCORING_ENABLED` |
 | x402 | `X402_ENABLED`, `X402_NETWORK`, `X402_FACILITATOR_URL`, `X402_FACILITATOR_API_KEY`, `X402_FACILITATOR_AUTH_HEADER`, `X402_PAY_TO`, `X402_PRICE`, `X402_BASE_*`, `COINBASE_*_BASE`, `X402_BNB_ENABLED`, `X402_BNB_NETWORK`, `X402_BNB_FACILITATOR_URL`, `X402_BNB_PAY_TO`, `BNB_RECEIPT_CONTRACT` |
 | Internal marketplaces | `WALCERT_INTERNAL_API_KEY`, `WALCERT_INTERNAL_MARKETPLACES` |
 | Summit BSG2026 | `WALCERT_SUMMIT_API_KEY`, `WALCERT_SUMMIT_ENABLED`, `WALCERT_SUMMIT_EXPIRES_AT`, `WALCERT_SUMMIT_RATE_LIMIT_WALLET` (default 12), `WALCERT_SUMMIT_RATE_LIMIT` (IP backstop, default 500), `WALCERT_SUMMIT_RATE_WINDOW_SECONDS` |
 | Payment logging | `PAYMENT_LOG_ENABLED`, `PAYMENT_LOG_SLUG` |
 | On-chain | `CELO_RPC_URL`, `REPUTATION_REGISTRY_ADDRESS`, `CERT_SIGNING_ENABLED`, `ONCHAIN_ANCHOR_ENABLED`, `AGENT_SIGNER_KEY` (monitor), `CERT_SIGNER_ADDRESS`, `CELO_CONFIRMATION_TIMEOUT`, `ONCHAIN_LOG_ENABLED`, `ONCHAIN_LOG_SLUG` |
-| Cache / HTTP / quota | `CACHE_TTL_SECONDS`, `HTTP_TIMEOUT_SECONDS`, `ALCHEMY_*`, `MORALIS_*`, `ZERION_DAILY_LIMIT` |
+| Cache / HTTP / quota | `CACHE_TTL_SECONDS`, `HTTP_TIMEOUT_SECONDS`, `ALCHEMY_*`, `GOLDRUSH_DAILY_LIMIT`, `ZERION_DAILY_LIMIT` |
 | Admin only | `AGENT_PRIVATE_KEY` (owner — scripts only), `PINATA_JWT` |
 
 > **Never commit real secrets.** `.env` and `*.pem` are git-ignored. Rotate

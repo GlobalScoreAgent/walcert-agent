@@ -34,7 +34,7 @@ class QuotaManager:
     def _default_state(self) -> dict[str, Any]:
         return {
             "alchemy": {"daily_cu": {}, "monthly_cu": {}},
-            "moralis": {"daily_cu": {}},
+            "goldrush": {"daily_calls": {}},
             "zerion": {"daily_calls": {}},
         }
 
@@ -64,9 +64,6 @@ class QuotaManager:
     def estimate_alchemy_cu(self, http_calls: int) -> int:
         return http_calls * self.settings.alchemy_cu_per_transfer_call
 
-    def estimate_moralis_cu(self, chain_count: int) -> int:
-        return max(chain_count, 1) * self.settings.moralis_cu_per_chain
-
     def can_consume_alchemy(self, cu: int) -> tuple[bool, str | None]:
         now = _utc_now()
         day = _day_key(now)
@@ -81,11 +78,11 @@ class QuotaManager:
             return False, "next_month"
         return True, None
 
-    def can_consume_moralis(self, cu: int) -> tuple[bool, str | None]:
+    def can_consume_goldrush(self, analyses: int = 1) -> tuple[bool, str | None]:
         day = _day_key()
         with self._lock:
-            daily = self._get_counter("moralis", "daily_cu", day)
-        if daily + cu > self.settings.moralis_daily_limit_cu:
+            daily = self._get_counter("goldrush", "daily_calls", day)
+        if daily + analyses > self.settings.goldrush_daily_limit:
             return False, "next_day"
         return True, None
 
@@ -110,11 +107,11 @@ class QuotaManager:
             )
             self._save()
 
-    def record_moralis(self, cu: int) -> None:
+    def record_goldrush(self, analyses: int = 1) -> None:
         day = _day_key()
         with self._lock:
-            self._state["moralis"]["daily_cu"][day] = (
-                self._get_counter("moralis", "daily_cu", day) + cu
+            self._state["goldrush"]["daily_calls"][day] = (
+                self._get_counter("goldrush", "daily_calls", day) + analyses
             )
             self._save()
 
@@ -141,11 +138,10 @@ class QuotaManager:
                     "monthly_limit": self.settings.alchemy_monthly_limit_cu,
                     "cu_per_transfer_call": self.settings.alchemy_cu_per_transfer_call,
                 },
-                "moralis": {
-                    "unit": "cu",
-                    "daily_used": self._get_counter("moralis", "daily_cu", day),
-                    "daily_limit": self.settings.moralis_daily_limit_cu,
-                    "cu_per_chain": self.settings.moralis_cu_per_chain,
+                "goldrush": {
+                    "unit": "analyses",
+                    "daily_used": self._get_counter("goldrush", "daily_calls", day),
+                    "daily_limit": self.settings.goldrush_daily_limit,
                 },
                 "zerion": {
                     "unit": "calls",

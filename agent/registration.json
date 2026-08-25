@@ -1,7 +1,7 @@
 {
   "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
   "name": "Walcert Agent",
-  "description": "Walcert Agent is an agent developed by Global Score Agent that issues A-F wallet maturity certificates on Celo through real-time analysis (hot-analysis): Origins (source of funds), Activity (recent activity and wash trading), Multi-Chain (multi-network presence and longevity) and Portfolio (composition and concentration). Scoring runs on Supabase Edge Functions using data from Alchemy, Moralis and Zerion. Server-to-server consumption via HTTP JSON. x402 payments are live: each certificate costs 0.05 USDC on Celo mainnet, settled gasless (EIP-3009) via the x402.celo.org facilitator. A free preview endpoint returns only the A-F grade.",
+  "description": "Walcert Agent is an agent developed by Global Score Agent that issues A-F wallet maturity certificates on Celo through real-time analysis (hot-analysis): Origins (source of funds), Activity (recent activity and wash trading), Multi-Chain (multi-network presence, longevity and intensity) and Portfolio (composition and concentration). Scoring runs on Supabase Edge Functions using data from Alchemy, GoldRush and Zerion. Server-to-server consumption via HTTP JSON. x402 payments are live: each certificate costs 0.05 USDC on Celo mainnet, settled gasless (EIP-3009) via the x402.celo.org facilitator. A free preview endpoint returns only the A-F grade. Public hybrid verification is available at POST /v1/verify (lookup by on-chain tx_hash + Celo NewFeedback + EIP-712; no payment).",
   "image": "ipfs://QmZ51W8hHdBZY83awqGhC3M98VJcjCBe6L3Zw7AYikcdz3",
   "services": [
     {
@@ -37,6 +37,12 @@
       "endpoint": "https://walcert.globalscoreagent.com/v1/preview/origins",
       "version": "0.2.0",
       "description": "Free preview: returns only the A-F grade (no metrics/signature, no payment). Available for origins and activity under /v1/preview/{type}. multichain and portfolio require the paid certificate endpoint."
+    },
+    {
+      "name": "walcert-verify",
+      "endpoint": "https://walcert.globalscoreagent.com/v1/verify",
+      "version": "0.2.0",
+      "description": "Public hybrid verification by on-chain tx_hash: database lookup + Celo NewFeedback confirmation + EIP-712 signature check. No payment. Body: {\"tx_hash\":\"0x...\"}."
     },
     {
       "name": "health",
@@ -87,5 +93,5 @@
   "supportedTrust": [
     "reputation"
   ],
-  "updatedAt": 1784351222
+  "updatedAt": 1784777711
 }

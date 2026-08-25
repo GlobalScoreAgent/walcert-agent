@@ -61,23 +61,6 @@ ALCHEMY_NETWORK_META: dict[str, dict[str, int | str]] = {
     "gnosis-mainnet": {"chain_id": 100, "name": "gnosis"},
 }
 
-# Chains accepted by Moralis getWalletActiveChains (mainnets). Celo is excluded.
-_MORALIS_SUPPORTED = {
-    "eth",
-    "ethereum",
-    "base",
-    "arbitrum",
-    "polygon",
-    "optimism",
-    "bsc",
-    "avalanche",
-    "fantom",
-    "gnosis",
-    "linea",
-    "moonbeam",
-    "moonriver",
-}
-
 
 class Settings:
     agent_id: int
@@ -86,17 +69,13 @@ class Settings:
     alchemy_api_key: str
     alchemy_networks: list[str]
     alchemy_endpoints: list[dict[str, str | int]]
-    moralis_api_key: str
     zerion_api_key: str
     cache_ttl_seconds: int
     http_timeout_seconds: float
     alchemy_cu_per_transfer_call: int
-    moralis_cu_per_chain: int
     alchemy_monthly_limit_cu: int
     alchemy_daily_limit_cu: int | None
-    moralis_daily_limit_cu: int
     zerion_daily_limit: int
-    moralis_chains: list[str]
     celo_chain_id: int
     supabase_functions_url: str
     edge_shared_secret: str
@@ -188,34 +167,18 @@ class Settings:
                 }
             ]
 
-        self.moralis_api_key = os.getenv("MORALIS_API_KEY", "")
         self.zerion_api_key = os.getenv("ZERION_API_KEY", "")
         self.cache_ttl_seconds = int(os.getenv("CACHE_TTL_SECONDS", "600"))
         self.http_timeout_seconds = float(os.getenv("HTTP_TIMEOUT_SECONDS", "30"))
         self.alchemy_cu_per_transfer_call = int(
             os.getenv("ALCHEMY_CU_PER_TRANSFER_CALL", "120")
         )
-        self.moralis_cu_per_chain = int(os.getenv("MORALIS_CU_PER_CHAIN", "50"))
         self.alchemy_monthly_limit_cu = int(
             os.getenv("ALCHEMY_MONTHLY_LIMIT_CU", "30000000")
         )
         daily_alchemy = os.getenv("ALCHEMY_DAILY_LIMIT_CU", "").strip()
         self.alchemy_daily_limit_cu = int(daily_alchemy) if daily_alchemy else None
-        self.moralis_daily_limit_cu = int(
-            os.getenv("MORALIS_DAILY_LIMIT_CU", "40000")
-        )
         self.zerion_daily_limit = int(os.getenv("ZERION_DAILY_LIMIT", "2000"))
-        chains_raw = os.getenv(
-            "MORALIS_CHAINS",
-            "eth,base,arbitrum,polygon,optimism,bsc",
-        )
-        self.moralis_chains = [
-            c.strip()
-            for c in chains_raw.split(",")
-            if c.strip() and c.strip().lower() in _MORALIS_SUPPORTED
-        ]
-        if not self.moralis_chains:
-            self.moralis_chains = ["eth", "base", "arbitrum", "bsc"]
         self.celo_chain_id = int(os.getenv("CELO_CHAIN_ID", "42220"))
         self.supabase_functions_url = os.getenv(
             "SUPABASE_FUNCTIONS_URL",
@@ -379,11 +342,13 @@ class Settings:
         )
         self.walcert_summit_marketplace = "bsg2026"
 
-        # GoldRush (Multichain v2) — Summit-only; never commit real keys.
+        # GoldRush (Multichain public + Summit alias). Never commit real keys.
         self.goldrush_api_key = os.getenv("GOLDRUSH_API_KEY", "").strip()
         self.goldrush_intensity_top_n = int(
             os.getenv("GOLDRUSH_INTENSITY_TOP_N", "6")
         )
+        # Circuit-breaker (analyses/day), not a billing cap. Flex credits cover overage.
+        self.goldrush_daily_limit = int(os.getenv("GOLDRUSH_DAILY_LIMIT", "500"))
 
 
 @lru_cache

@@ -30,7 +30,7 @@ El agente responde con este envoltorio. `analysis` es el JSON enriquecido por el
   "status": "ok",
   "mode": "hot",
   "certificate_type": "<origins|activity|multichain|portfolio>",
-  "provider": "<alchemy|moralis|zerion>",
+  "provider": "<alchemy|goldrush|zerion>",
   "analysis": { },
   "certificate": { }
 }
@@ -40,7 +40,7 @@ El agente responde con este envoltorio. `analysis` es el JSON enriquecido por el
 |--------------------|------------|
 | `origins` | `alchemy` |
 | `activity` | `alchemy` |
-| `multichain` | `moralis` |
+| `multichain` | `goldrush` |
 | `portfolio` | `zerion` |
 
 ---
@@ -238,7 +238,7 @@ Notes: las 11 señales viven en `certificate.details`; `selection.truncated` ind
 
 ## 3. Multi-Chain (`POST /v1/certificates/multichain`)
 
-Provider: Moralis (`GET /wallets/{address}/chains`). Edge formula `multichain-v1.5`. Celo merge via Alchemy when missing.
+Provider: GoldRush (`/activity/` + `transactions_summary` top 6). Edge formula `multichain-v2.1`. Celo is native (no Alchemy merge). Preview of `multichain` is 403.
 
 ```json
 {
@@ -246,11 +246,11 @@ Provider: Moralis (`GET /wallets/{address}/chains`). Edge formula `multichain-v1
   "status": "ok",
   "mode": "hot",
   "certificate_type": "multichain",
-  "provider": "moralis",
+  "provider": "goldrush",
   "analysis": {
     "module": "multichain",
-    "version": "1.5",
-    "formula_hint": "multichain-v1.5",
+    "version": "2.0",
+    "formula_hint": "multichain-v2.1",
     "core_ecosystem_list_version": "2026-07-26",
     "wallet": "0x2efc66c0a78620dd254443998bf2f11b685602e3",
     "analyzed_at": "2026-07-26T19:45:00Z",
@@ -288,11 +288,11 @@ Provider: Moralis (`GET /wallets/{address}/chains`). Edge formula `multichain-v1
   },
   "certificate": {
     "type": "MULTICHAIN",
-    "version": "1.5",
-    "formula_version": "multichain-v1.5",
+    "version": "2.0",
+    "formula_version": "multichain-v2.1",
     "grade": "B",
     "grade_breakdown": {
-      "formula_version": "multichain-v1.5",
+      "formula_version": "multichain-v2.1",
       "subject_type": "entity",
       "applied_rule": "B",
       "grade": "B",
@@ -312,12 +312,13 @@ Provider: Moralis (`GET /wallets/{address}/chains`). Edge formula `multichain-v1
 
 Notas:
 
-- Moralis no acepta `celo` en este endpoint; el set default es `eth,base,arbitrum,polygon,optimism,bsc`.
-- Solo se incluyen chains con al menos un timestamp real; `celo_merged: true` si Alchemy añade Celo.
+- Celo viene en GoldRush (`celo-mainnet`); no hay merge Alchemy.
+- Intensity se muestrea en top N mainnets (`GOLDRUSH_INTENSITY_TOP_N`, default 6).
+- Preview de `multichain` → 403.
 
-### 3b. Multichain v2 Summit-only (`POST /v1/summit/certificates/multichain-v2`)
+### 3b. Alias Summit (`POST /v1/summit/certificates/multichain-v2`)
 
-Provider: GoldRush. Edge formula `multichain-v2.1`. Auth Summit required (`403 summit_only` otherwise). Certificate `type: MULTICHAIN`, `version: "2.0"`. Details include footprint + intensity (tx counts, HHI, primary chain) and `ecosystem_count` via chain **family map** (not raw category labels). See [bsg2026-summit.md](bsg2026-summit.md).
+Mismo provider/fórmula que el público. Auth Summit required (`403 summit_only` otherwise). Certificate `type: MULTICHAIN`, `version: "2.0"`, `formula_version: "multichain-v2.1"`. See [bsg2026-summit.md](bsg2026-summit.md).
 
 ---
 
@@ -473,8 +474,8 @@ La respuesta HTTP del agente incluye `analysis` + `certificate` (grade A–F). V
 |------|--------|
 | origins | `senders[]` (cap 1000); `inflows[]` con amount/usd; `value_relevant_*` + `priced_coverage_pct` (Edge `origins-v2.2`) |
 | activity | `counterparties[]`, `transfers[]` compacto **15d** (`window_days: 15`, formula `activity-v2.1`) |
-| multichain | `chains[]` enriquecidos; Edge `multichain-v1.5` (público) |
-| multichain_v2 | Summit-only GoldRush; Edge `multichain-v2.1` + family map ecosystems |
+| multichain | `chains[]` enriquecidos; Edge `multichain-v2.1` (GoldRush público) |
+| multichain_v2 | Alias Summit del mismo pipeline; log type `multichain_v2` |
 | portfolio | `positions[]` ricos; Edge `portfolio-v2.2` + dual totals `*_credible` / absurd filter |
 
 ### Envelope con certificado
@@ -526,7 +527,7 @@ La respuesta HTTP del agente incluye `analysis` + `certificate` (grade A–F). V
 }
 ```
 
-> Nota sobre `provider`: hay dos campos con ese nombre. El `provider` del **envelope** (nivel superior) indica el proveedor de datos (`alchemy|moralis|zerion`). El `provider` dentro de **`certificate`** es el texto de marca ("Powered by Global Score Agent…") y solo aparece en los certificados completos (no en el preview).
+> Nota sobre `provider`: hay dos campos con ese nombre. El `provider` del **envelope** (nivel superior) indica el proveedor de datos (`alchemy|goldrush|zerion`). El `provider` dentro de **`certificate`** es el texto de marca ("Powered by Global Score Agent…") y solo aparece en los certificados completos (no en el preview).
 
 ### Verificabilidad on-chain (`signature` + `onchain`)
 

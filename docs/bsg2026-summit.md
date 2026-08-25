@@ -21,10 +21,10 @@ Content-Type: application/json
 |------|--------------------------|
 | `origins` | `origins-v2.2` |
 | `activity` | `activity-v2.1` |
-| `multichain` | `multichain-v1.5` (Moralis) |
+| `multichain` | `multichain-v2.1` (GoldRush) |
 | `portfolio` | `portfolio-v2.2` |
 
-**Multichain v2 (solo Summit)** — GoldRush; no está en agent card ni x402:
+**Multichain v2 (alias Summit)** — mismo GoldRush `multichain-v2.1` que el path público `/v1/certificates/multichain`:
 
 ```http
 POST /v1/summit/certificates/multichain-v2
@@ -51,7 +51,7 @@ Atribución persistida (vía meta `_walcert_access` → Edge):
 - `marketplace`: `bsg2026`
 - `billing`: `free`
 
-Env Summit adicional: `GOLDRUSH_API_KEY` en el agente EC2 (solo Multichain v2).
+Env Summit adicional: `GOLDRUSH_API_KEY` en el agente EC2 (Multichain público + alias Summit).
 
 ## Variables de entorno (agente EC2)
 

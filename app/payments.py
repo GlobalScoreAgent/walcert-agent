@@ -154,8 +154,8 @@ BAZAAR_DESCRIPTIONS: dict[str, str] = {
         "A-F before you transact. POST wallet_address; signed certificate. $0.05 USDC."
     ),
     "multichain": (
-        "Grade a wallet's chain footprint and longevity A-F across EVM networks. "
-        "POST wallet_address; signed certificate. $0.05 USDC."
+        "Grade a wallet's chain footprint, longevity and sampled tx intensity A-F "
+        "across EVM networks. POST wallet_address; signed certificate. $0.05 USDC."
     ),
     "portfolio": (
         "Grade wallet portfolio quality (usable vs spam/dust, concentration, "

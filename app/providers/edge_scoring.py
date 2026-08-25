@@ -10,7 +10,8 @@ from app.errors import ProviderError
 EDGE_SLUGS = {
     "origins": "walcert-certificate-origins",
     "activity": "walcert-certificate-activity",
-    "multichain": "walcert-certificate-multichain",
+    "multichain": "walcert-certificate-multichain-v2",
+    "multichain_v2": "walcert-certificate-multichain-v2",
     "portfolio": "walcert-certificate-portfolio",
 }
 
@@ -30,6 +31,7 @@ class EdgeScoringClient:
         wallet: str,
         analyzed_at: str,
         analysis: dict[str, Any],
+        access_meta: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not self.enabled():
             raise ProviderError(
@@ -46,14 +48,17 @@ class EdgeScoringClient:
             "Authorization": f"Bearer {self.settings.edge_shared_secret}",
             "Content-Type": "application/json",
         }
-        body = {
+        body: dict[str, Any] = {
             "wallet": wallet.lower(),
             "analyzed_at": analyzed_at,
             "certificate_type": certificate_type,
             "payload": analysis,
         }
+        if access_meta:
+            body["_walcert_access"] = access_meta
+
         async with httpx.AsyncClient(
-            timeout=self.settings.http_timeout_seconds,
+            timeout=max(120.0, self.settings.http_timeout_seconds),
             follow_redirects=True,
         ) as client:
             try:

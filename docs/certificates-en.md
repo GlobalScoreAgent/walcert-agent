@@ -25,8 +25,7 @@ Common grade scale:
 |------|-------------------|----------------|---------|
 | Origins | `origins-v2.2` | `2.0` | public + Summit |
 | Activity | `activity-v2.1` | `2.0` | public + Summit |
-| Multichain | `multichain-v1.5` | `1.5` | public + Summit |
-| Multichain v2 | `multichain-v2.1` | `2.0` | **Summit-only** |
+| Multichain | `multichain-v2.1` | `2.0` | public + Summit |
 | Portfolio | `portfolio-v2.2` | `2.0` | public + Summit |
 
 ---
@@ -113,45 +112,21 @@ Common grade scale:
 
 ## 3. Multi-Chain — Multi-network presence
 
-**What it evaluates:** multi-network footprint and longevity (not intensity — Moralis has no tx/volume per chain).
+**What it evaluates:** footprint, longevity, and **sampled intensity** (txs on the top 6 mainnets). Celo is native in GoldRush; no Alchemy merge.
 
-**Version:** `multichain-v1.5` (certificate `version: "1.5"`).
+**Version:** `multichain-v2.1` (certificate `version: "2.0"`). Preview is **not** available (403).
 
-**Flow (prod):** agent enriches `analysis` (Moralis chains + optional Celo Alchemy merge) → Edge `walcert-certificate-multichain` recomputes signals from `chains[]` (canonical) + grade.
+**Flow (prod):** agent enriches `analysis` (GoldRush `/activity/` + `transactions_summary`) → Edge `walcert-certificate-multichain-v2` recomputes signals from `chains[]` (canonical) + grade.
 
 **Data sources:**
-- Moralis `GET /wallets/{address}/chains` (same call as v1).
-- **Celo** via Alchemy merge when missing from Moralis.
+- GoldRush `GET /v1/address/{wallet}/activity/` (footprint).
+- GoldRush `GET /v1/{chain}/address/{wallet}/transactions_summary/` on the top 6 priority mainnets (`GOLDRUSH_INTENSITY_TOP_N`, default 6).
 - Versioned core list (`CORE_ECOSYSTEM_LIST_VERSION`): eth, base, celo, arbitrum, optimism, polygon.
+- `ecosystem_count` = chain-name family map (eth/base/arb/op → ethereum), not raw `category_label`.
 
-**Signals (in `certificate.details`):** chain count, global span, active 30d/90d, dormant ratio, consistency, recency, core ecosystems, footprint concentration (HHI of span_days), per-chain longevity flags. Legacy: `main_chains`, `total_chains_with_activity`, `activity_span_days`.
+**Signals (in `certificate.details`):** mainnets/testnets, span, active 30d/90d, dormant ratio, consistency, recency, core ecosystems, footprint concentration, intensity (`total_tx_count`, `tx_hhi`, weighted activity, primary chain, gas).
 
-**Explainability:** `formula_version: "multichain-v1.5"`, `grade_breakdown`, `inputs_hash`.
-
-**Grading rules (order F→D→A→B→C):**
-- **F:** 0 chains, or 1 chain with span &lt; 30d, or 1 chain with no 90d activity and span &lt; 90d.
-- **D:** 1 chain, or mostly dormant (dormant_ratio &gt; 0.75 and no 30d), or 2 chains with weak span/consistency.
-- **A:** ≥4 chains, span ≥365, consistency ≥0.50, ≥2 core ecosystems, ≥2 active in 90d, footprint HHI ≤0.70, recency ≥0.35.
-- **B:** ≥3 chains, span ≥180, ≥1 core, consistency ≥0.40, ≥1 active in 90d.
-- **C:** everything else.
-
-**Out of scope (public endpoint):** GoldRush intensity (see Summit-only Multichain v2 below).
-
-### Summit-only — Multichain v2 (GoldRush)
-
-**Not a public agent endpoint** (not in agent card, not x402). Requires Summit auth.
-
-```http
-POST /v1/summit/certificates/multichain-v2
-Authorization: Bearer <WALCERT_SUMMIT_API_KEY>
-X-Walcert-Marketplace: bsg2026
-```
-
-**Version:** `multichain-v2.1` (certificate `version: "2.0"`, `type: MULTICHAIN`).
-
-**Data:** GoldRush `/activity/` + `transactions_summary` on top 6 priority mainnets (`GOLDRUSH_API_KEY` on EC2 env).
-
-**Signals:** footprint (mainnets, span, recency, consistency, dormant, core) + intensity (`total_tx_count`, `tx_hhi`, weighted activity, primary chain, gas). `ecosystem_count` = chain families (`eth/base/arb/op → ethereum`, etc.), not raw GoldRush `category_label`.
+**Explainability:** `formula_version: "multichain-v2.1"`, `grade_breakdown`, `inputs_hash`.
 
 **Grading rules (order F→D→A→B→C):**
 - **F:** 0 mainnets, testnets-only, or 1 mainnet with span &lt; 30 and total_tx &lt; 5.
@@ -160,7 +135,17 @@ X-Walcert-Marketplace: bsg2026
 - **B:** mainnets ≥ 3, ecosystems ≥ 2, span ≥ 180, consistency ≥ 0.40, total_tx ≥ 15.
 - **C:** everything else.
 
-**Non-Summit callers:** HTTP 403 `summit_only`.
+**Paid rails:** x402 **$0.05** (Celo/Base/BNB) and ACP **$0.05**. Preview does not call GoldRush.
+
+### Summit alias — `POST /v1/summit/certificates/multichain-v2`
+
+Same GoldRush `multichain-v2.1` pipeline. Requires Summit auth (`403 summit_only` otherwise). Attribution `access_channel=summit` / `billing=free` (no x402).
+
+```http
+POST /v1/summit/certificates/multichain-v2
+Authorization: Bearer <WALCERT_SUMMIT_API_KEY>
+X-Walcert-Marketplace: bsg2026
+```
 
 ---
 

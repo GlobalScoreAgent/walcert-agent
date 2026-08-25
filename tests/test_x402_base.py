@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from app.models import CERTIFICATE_TYPES
 from app.payments import (
     BAZAAR_DESCRIPTIONS,
@@ -64,12 +66,14 @@ def test_x402_base_ready_with_coinbase_env(monkeypatch):
 
 
 def test_payment_accepts_base_first_when_include_base():
+    pytest.importorskip("x402")
     s = _settings()
     nets = [opt.network for opt in _payment_accepts(s, include_base=True)]
     assert nets == ["eip155:8453", "eip155:42220"]
 
 
 def test_payment_accepts_celo_only():
+    pytest.importorskip("x402")
     s = _settings()
     nets = [opt.network for opt in _payment_accepts(s, include_base=False)]
     assert nets == ["eip155:42220"]
@@ -82,6 +86,7 @@ def test_bazaar_descriptions_within_cdp_limit():
 
 
 def test_bazaar_extensions_on_all_paid_routes():
+    pytest.importorskip("x402")
     s = _settings()
     accepts = _payment_accepts(s, include_base=True)
     for cert_type in CERTIFICATE_TYPES:
@@ -94,6 +99,7 @@ def test_bazaar_extensions_on_all_paid_routes():
 
 
 def test_celo_only_route_has_no_bazaar_extension():
+    pytest.importorskip("x402")
     s = _settings()
     accepts = _payment_accepts(s, include_base=False)
     cfg = _certificate_route_config("origins", accepts, bazaar=False)

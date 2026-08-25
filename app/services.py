@@ -10,85 +10,93 @@ from app.models import PROVIDER_BY_TYPE
 from app.providers.alchemy import AlchemyProvider
 from app.providers.cache import TTLCache
 from app.providers.edge_scoring import EdgeScoringClient
-from app.providers.moralis import MoralisProvider
+from app.providers.goldrush import GoldRushProvider
 from app.providers.zerion import ZerionProvider
 
 _settings = get_settings()
 _cache = TTLCache(ttl_seconds=_settings.cache_ttl_seconds)
 _alchemy = AlchemyProvider()
-_moralis = MoralisProvider()
 _zerion = ZerionProvider()
+_goldrush = GoldRushProvider()
 _edge = EdgeScoringClient()
 
 # Locks por cache_key para evitar firmar/anclar dos veces el mismo certificado.
 _certify_locks: dict[str, asyncio.Lock] = {}
 
 
-def _parse_ts(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        if value.endswith("Z"):
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return None
-
-
-async def _merge_celo_into_multichain(
-    analysis: dict[str, Any], wallet: str
+def _sync_origins_analysis_from_certificate(
+    analysis: dict[str, Any], certificate: dict[str, Any]
 ) -> dict[str, Any]:
-    chains = list(analysis.get("chains") or [])
-    if any(str(c.get("chain", "")).lower() == "celo" for c in chains):
+    """Align agent origin_summary with Edge-canonical certificate details."""
+    details = certificate.get("details") if isinstance(certificate, dict) else None
+    if not isinstance(details, dict):
         return analysis
-
-    celo = await _alchemy.probe_celo_activity(wallet)
-    if not celo:
-        return analysis
-
-    chains.append(celo)
-    first_all: datetime | None = None
-    last_all: datetime | None = None
-    for item in chains:
-        first_dt = _parse_ts(
-            item.get("first_transaction")
-            if isinstance(item.get("first_transaction"), str)
-            else None
-        )
-        last_dt = _parse_ts(
-            item.get("last_transaction")
-            if isinstance(item.get("last_transaction"), str)
-            else None
-        )
-        if first_dt and (first_all is None or first_dt < first_all):
-            first_all = first_dt
-        if last_dt and (last_all is None or last_dt > last_all):
-            last_all = last_dt
-
-    span_days = 0
-    if first_all and last_all:
-        span_days = max(0, (last_all - first_all).days)
-
-    chain_count = len(chains)
-    longevity = min(1.0, span_days / 1000.0) if span_days else 0.0
-    consistency = min(1.0, chain_count / 5.0)
-    analysis = dict(analysis)
-    analysis["chains"] = chains
-    analysis["total_chains_with_activity"] = chain_count
-    analysis["activity_span_days"] = span_days
-    analysis["score_inputs"] = {
-        "chain_count": chain_count,
-        "activity_consistency": round(consistency, 2),
-        "longevity_score": round(longevity, 2),
-    }
-    analysis["celo_merged"] = True
-    return analysis
+    out = dict(analysis)
+    main = details.get("main_origin_type")
+    cex = details.get("cex_percentage")
+    bridge = details.get("bridge_percentage")
+    cats = details.get("category_percentages") or {}
+    summary = dict(out.get("origin_summary") or {})
+    if main is not None:
+        summary["main_origin_type"] = main
+    if cex is not None:
+        summary["cex_percentage"] = cex
+    if bridge is not None:
+        summary["bridge_percentage"] = bridge
+    if isinstance(cats, dict):
+        if "dex" in cats:
+            summary["dex_percentage"] = cats.get("dex")
+        if "organic" in cats:
+            summary["other_percentage"] = cats.get("organic")
+        elif "unknown" in cats:
+            summary["other_percentage"] = cats.get("unknown")
+    summary["canonical_source"] = "edge"
+    out["origin_summary"] = summary
+    if main is not None:
+        out["main_origin_type"] = main
+    if details.get("hhi") is not None:
+        out["hhi"] = details.get("hhi")
+    if details.get("concentration") is not None:
+        out["concentration"] = details.get("concentration")
+    if cats:
+        out["category_percentages"] = cats
+    return out
 
 
 async def run_certificate(
     certificate_type: str, wallet: str, certify: bool = False
 ) -> dict[str, Any]:
-    cache_key = f"{certificate_type}:{wallet.lower()}"
+    from app.internal_access import AccessContext, get_access, set_access
+
+    ctx = get_access()
+    if not certify:
+        billing = "free"
+    elif ctx.is_summit:
+        billing = "free"
+    elif ctx.is_internal:
+        billing = "marketplace"
+    else:
+        billing = "x402"
+    set_access(
+        AccessContext(
+            access_channel=ctx.access_channel,
+            marketplace=ctx.marketplace,
+            billing=billing,
+        )
+    )
+    access_meta = {
+        "access_channel": ctx.access_channel,
+        "marketplace": ctx.marketplace if ctx.skips_x402 else None,
+        "billing": billing,
+    }
+
+    # Include channel/marketplace so internal traffic is scored+logged separately
+    # from direct (attribution rows in certificate_requests).
+    market_part = access_meta.get("marketplace") or "none"
+    cache_key = (
+        f"{certificate_type}:{wallet.lower()}:"
+        f"{access_meta['access_channel']}:{market_part}:{billing}"
+    )
     cached = _cache.get(cache_key)
     if cached is not None:
         if certify:
@@ -100,12 +108,7 @@ async def run_certificate(
     elif certificate_type == "activity":
         analysis = await _alchemy.analyze_activity(wallet)
     elif certificate_type == "multichain":
-        analysis = await _moralis.analyze_multichain(wallet)
-        try:
-            analysis = await _merge_celo_into_multichain(analysis, wallet)
-        except (ProviderError, QuotaExceeded, MissingCredentials):
-            # Multichain still valid without Celo merge
-            pass
+        analysis = await _goldrush.analyze_multichain_v2(wallet)
     elif certificate_type == "portfolio":
         analysis = await _zerion.analyze_portfolio(wallet)
     else:
@@ -123,9 +126,16 @@ async def run_certificate(
     if _settings.edge_scoring_enabled and _edge.enabled():
         analyzed_at = str(analysis.get("analyzed_at") or datetime.now(timezone.utc).isoformat())
         certificate = await _edge.score(
-            certificate_type, wallet, analyzed_at, analysis
+            certificate_type,
+            wallet,
+            analyzed_at,
+            analysis,
+            access_meta=access_meta,
         )
         result["certificate"] = certificate
+        if certificate_type == "origins":
+            analysis = _sync_origins_analysis_from_certificate(analysis, certificate)
+            result["analysis"] = analysis
     elif _settings.edge_scoring_enabled:
         raise ProviderError(
             "edge",
@@ -175,8 +185,66 @@ async def _maybe_certify(cache_key: str, result: dict[str, Any]) -> dict[str, An
     return result
 
 
+async def run_multichain_v2_summit(wallet: str) -> dict[str, Any]:
+    """Summit-only Multichain v2 (GoldRush). Caller must enforce Summit auth."""
+    from app.internal_access import AccessContext, get_access, set_access
+
+    ctx = get_access()
+    if not ctx.is_summit:
+        raise ProviderError("agent", "summit_only", status_code=403)
+
+    set_access(
+        AccessContext(
+            access_channel="summit",
+            marketplace=ctx.marketplace or _settings.walcert_summit_marketplace,
+            billing="free",
+        )
+    )
+    access_meta = {
+        "access_channel": "summit",
+        "marketplace": ctx.marketplace or _settings.walcert_summit_marketplace,
+        "billing": "free",
+    }
+    cache_key = f"multichain_v2:{wallet.lower()}:summit:{access_meta['marketplace']}:free"
+    cached = _cache.get(cache_key)
+    if cached is not None:
+        return await _maybe_certify(cache_key, cached)
+
+    analysis = await _goldrush.analyze_multichain_v2(wallet)
+    result: dict[str, Any] = {
+        "available": True,
+        "status": "ok",
+        "mode": "hot",
+        "certificate_type": "multichain_v2",
+        "provider": "goldrush",
+        "analysis": analysis,
+    }
+
+    if _settings.edge_scoring_enabled and _edge.enabled():
+        analyzed_at = str(
+            analysis.get("analyzed_at") or datetime.now(timezone.utc).isoformat()
+        )
+        certificate = await _edge.score(
+            "multichain_v2",
+            wallet,
+            analyzed_at,
+            analysis,
+            access_meta=access_meta,
+        )
+        result["certificate"] = certificate
+    elif _settings.edge_scoring_enabled:
+        raise ProviderError(
+            "edge",
+            "EDGE_SHARED_SECRET / SUPABASE_FUNCTIONS_URL not configured",
+        )
+
+    _cache.set(cache_key, result)
+    return await _maybe_certify(cache_key, result)
+
+
 __all__ = [
     "run_certificate",
+    "run_multichain_v2_summit",
     "QuotaExceeded",
     "ProviderError",
     "MissingCredentials",
