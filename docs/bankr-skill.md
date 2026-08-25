@@ -21,9 +21,8 @@ skills/walcert/
   references/x402-rails.md
 ```
 
-**Bankr cannot fetch the private `walcert-agent` repo.** The public install target is
-[`GlobalScoreAgent/walcert-skill`](https://github.com/GlobalScoreAgent/walcert-skill)
-(same folder). Keep both copies in sync when you edit the skill.
+Discover install (after merge) is **Bankr-native**: `BankrBot/skills/walcert`.
+Canonical skill text is copied there from this repo / `walcert-skill`. Keep those copies in sync.
 
 Install (Bankr terminal), **after** Discover merge:
 
@@ -41,8 +40,8 @@ Until that merge, Bankr cannot fetch `GlobalScoreAgent/*` (account 404 when logg
   - `POST https://walcert.globalscoreagent.com/v1/verify`
 - Prefer **Base** (`eip155:8453`) for the paid 402. BNB Permit2 + NFT `claim` only if
   the host can settle `eip155:56` (see `references/x402-rails.md`).
-- Discover PR: [BankrBot/skills#668](https://github.com/BankrBot/skills/pull/668).
-  Public GitHub source of truth for install: `walcert-skill`.
+- Discover PR: [BankrBot/skills#668](https://github.com/BankrBot/skills/pull/668)
+  (`install.type: bankr` → `BankrBot/skills/tree/main/walcert`).
 
 ## Forbidden (ADR)
 
