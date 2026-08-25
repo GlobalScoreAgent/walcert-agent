@@ -55,4 +55,6 @@ client: `access_channel=direct`, `billing=x402`.
 2. Ask for a **preview** of `origins` on a test wallet (no payment).
 3. Optional: pay **$0.05 USDC on Base** for a full certificate. Do not use Owner/Monitor/payTo as the buyer unless it is a conscious smoke.
 
-OpenClaw: same `SKILL.md`. ClawHub publish is a later step (HUMI skill is postponed).
+OpenClaw: same `SKILL.md`. ClawHub: `clawhub skill publish ./skills/walcert --slug walcert --name Walcert --owner <owner> --categories finance,agents --topics "x402,wallet,certificates"` (requires `clawhub login`).
+
+Bankr Discover PR: https://github.com/BankrBot/skills/pull/668 (install-from-GitHub already works on `main`).
