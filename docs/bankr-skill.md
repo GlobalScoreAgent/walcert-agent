@@ -15,16 +15,20 @@ surface (`metadata.openclaw`). Bankr-only metadata lives in `catalog.json`.
 
 ```
 skills/walcert/
-  SKILL.md              # Agent Skills body (source of truth)
-  catalog.json          # Bankr Discover (required for a future BankrBot/skills PR)
+  SKILL.md
+  catalog.json
   references/api.md
   references/x402-rails.md
 ```
 
-Install (Bankr terminal, no catalog merge required):
+**Bankr cannot fetch the private `walcert-agent` repo.** The public install target is
+[`GlobalScoreAgent/walcert-skill`](https://github.com/GlobalScoreAgent/walcert-skill)
+(same folder). Keep both copies in sync when you edit the skill.
+
+Install (Bankr terminal):
 
 ```
-install the walcert skill from https://github.com/GlobalScoreAgent/walcert-agent/tree/main/skills/walcert
+install the walcert skill from https://github.com/GlobalScoreAgent/walcert-skill/tree/main/skills/walcert
 ```
 
 ## Allowed
@@ -35,8 +39,8 @@ install the walcert skill from https://github.com/GlobalScoreAgent/walcert-agent
   - `POST https://walcert.globalscoreagent.com/v1/verify`
 - Prefer **Base** (`eip155:8453`) for the paid 402. BNB Permit2 + NFT `claim` only if
   the host can settle `eip155:56` (see `references/x402-rails.md`).
-- Optional later PR to [BankrBot/skills](https://github.com/BankrBot/skills). This
-  repo stays source of truth.
+- Discover PR: [BankrBot/skills#668](https://github.com/BankrBot/skills/pull/668).
+  Public GitHub source of truth for install: `walcert-skill`.
 
 ## Forbidden (ADR)
 
@@ -57,4 +61,4 @@ client: `access_channel=direct`, `billing=x402`.
 
 OpenClaw: same `SKILL.md`. ClawHub: `clawhub skill publish ./skills/walcert --slug walcert --name Walcert --owner <owner> --categories finance,agents --topics "x402,wallet,certificates"` (requires `clawhub login`).
 
-Bankr Discover PR: https://github.com/BankrBot/skills/pull/668 (install-from-GitHub already works on `main`).
+Bankr Discover PR: https://github.com/BankrBot/skills/pull/668.
