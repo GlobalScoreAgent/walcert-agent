@@ -33,6 +33,7 @@ Full documentation:
 - Concordium CIS-8004 registration: [docs/concordium-cis8004.md](docs/concordium-cis8004.md) · runbook: [docs/concordium-ops-runbook.md](docs/concordium-ops-runbook.md) · public card: `/agent-card.json`
 - CDP Bazaar / agentic.market discovery: [docs/cdp-bazaar.md](docs/cdp-bazaar.md)
 - BNB x402 (Permit2) + receipt NFT: [docs/bnb-x402-receipt.md](docs/bnb-x402-receipt.md)
+- Bankr runtime (thin skill, not x402 Cloud wrap): [docs/bankr-skill.md](docs/bankr-skill.md) · skill: [skills/walcert/](skills/walcert/)
 
 ## Architecture
 
