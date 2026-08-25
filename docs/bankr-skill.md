@@ -25,11 +25,13 @@ skills/walcert/
 [`GlobalScoreAgent/walcert-skill`](https://github.com/GlobalScoreAgent/walcert-skill)
 (same folder). Keep both copies in sync when you edit the skill.
 
-Install (Bankr terminal):
+Install (Bankr terminal), **after** Discover merge:
 
 ```
-install the walcert skill from https://github.com/GlobalScoreAgent/walcert-skill
+install the walcert skill from https://github.com/BankrBot/skills/tree/main/walcert
 ```
+
+Until that merge, Bankr cannot fetch `GlobalScoreAgent/*` (account 404 when logged out). Workaround: paste `SKILL.md` into the terminal.
 
 ## Allowed
 
