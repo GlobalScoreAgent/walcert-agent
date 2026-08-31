@@ -1,8 +1,50 @@
 # Walcert Agent
 
-**Walcert Agent** is an [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) agent on **Celo**, built by **Global Score Agent**, that issues **A–F wallet-maturity certificates** through real-time analysis (*hot-analysis*). It is designed for server-to-server (agent-to-agent) consumption over HTTP JSON, with payments settled via the **x402** protocol.
+A–F wallet-maturity certificates for AI agents, with native **USDC x402** settlement and a soulbound **receipt NFT** on **BNB Smart Chain (BSC)**, also compatible with other EVM networks (Celo, Base). Built by **Global Score Agent**.
 
-- On-chain identity: **agentId `9699`** on the ERC-8004 Identity Registry `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` (Celo), owner `0x475F589BD4bFe82b333b8006dcc278f393b8E124`.
+Product: [globalscoreagent.com/walcert](https://www.globalscoreagent.com/walcert) · API / agent card: [walcert.globalscoreagent.com](https://walcert.globalscoreagent.com)
+
+> README layout aligned with [BNB Chain EXAMPLE-README](https://github.com/bnb-chain/bnb-chain-tutorial/blob/main/EXAMPLE-README.md) for DappBay / ecosystem review.
+
+## Technology Stack
+
+- **Blockchain**: BNB Smart Chain + EVM-compatible chains (Celo, Base)
+- **Smart Contracts**: Solidity `^0.8.24` — `contracts/WalcertBnbReceipt.sol` (OpenZeppelin 5.x ERC-721 + EIP-712)
+- **Backend / agent**: Python FastAPI (HTTP JSON, agent-to-agent)
+- **Payments**: [x402](https://x402.org) — Permit2 on BSC (Dexter), plus Celo / Base rails
+- **Frontend**: Product pages on Global Score Agent web (Next.js); this repo is the agent + BSC receipt contract
+- **Development**: Remix / Foundry-compatible Solidity; OpenZeppelin libraries
+
+## Supported Networks
+
+- **BNB Smart Chain Mainnet** (Chain ID: 56) — x402 USDC + receipt NFT (DappBay track)
+- **Celo Mainnet** (Chain ID: 42220) — canonical ERC-8004 identity + certificate anchor (`giveFeedback`)
+- **Base Mainnet** (Chain ID: 8453) — x402 / Virtuals ACP / CDP Bazaar
+- *(No dedicated BNB testnet deployment of the receipt NFT yet)*
+
+## Contract Addresses
+
+| Network | Core Contract (receipt NFT) | Token Contract | Notes |
+|---------|-----------------------------|----------------|-------|
+| BNB Mainnet | [`0x4e430fB5A5f26ED08eC123373Cd8AD3cE15C24c7`](https://bscscan.com/address/0x4e430fB5A5f26ED08eC123373Cd8AD3cE15C24c7#code) | — (no project token) | `WalcertBnbReceipt` · verified · soulbound `claim` by payer |
+| BNB Testnet | — | — | Not deployed |
+| Celo | ERC-8004 Identity Registry `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` | — | agentId **9699** (canonical certificate) |
+| Base / Eth | — | — | Marketplace identity only; no Walcert receipt NFT |
+
+BNB identity for Agent.family: agentId **265982**. Do **not** list the shared ERC-8004 Reputation Registry as Walcert’s DappBay contract — track the receipt above. Details: [docs/bnb-x402-receipt.md](docs/bnb-x402-receipt.md).
+
+## Features
+
+- A–F wallet maturity certificates (`origins`, `activity`, `multichain`, `portfolio`) over HTTP JSON
+- Native BNB settlement: **$0.05 USDC** via x402 Permit2 (Dexter facilitator)
+- Soulbound **receipt NFT** on BSC — paying wallet calls `claim` (user `from` for DAU)
+- Certificate JSON stays canonical on **Celo** (EIP-712 + on-chain feedback); BNB proves payment
+- Multi-chain x402 rails (BNB + Celo + Base) from one agent endpoint
+- Gas-efficient soulbound mint design for BSC (no transfers; one `dataHash` → one NFT)
+
+## Identity (quick)
+
+- On-chain identity (Celo): **agentId `9699`** · owner `0x475F589BD4bFe82b333b8006dcc278f393b8E124`
 - Public base URL: `https://walcert.globalscoreagent.com`
 - Agent / payTo wallet: `0xF4D938200445B0Df0f028af6d90D016147AEd095`
 
