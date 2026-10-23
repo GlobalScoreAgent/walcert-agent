@@ -47,7 +47,7 @@ El agente responde con este envoltorio. `analysis` es el JSON enriquecido por el
 
 ## 1. Origins (`POST /v1/certificates/origins`)
 
-Provider: Alchemy (networks from `erc_8004.chains` where `is_active` + `subdomain_alchemy`; fallback `ALCHEMY_NETWORKS`). Up to **500 transfers/network**. USD via DefiLlama / stables / spot. Edge formula `origins-v2.2`.
+Provider: Alchemy (networks from `erc_8004.chains` where `is_active` + `subdomain_alchemy`; fallback `ALCHEMY_NETWORKS`). Up to **500 transfers/network**. USD via DefiLlama / stables / spot. Edge formula `origins-v2.3`.
 
 ```json
 {
@@ -67,7 +67,7 @@ Provider: Alchemy (networks from `erc_8004.chains` where `is_active` + `subdomai
     "priced_inflows": 640,
     "unpriced_inflows": 160,
     "total_value_usd_priced": 12540.2,
-    "selection": { "order": "asc", "max_per_network": 500, "formula_hint": "origins-v2.2" },
+    "selection": { "order": "asc", "max_per_network": 500, "formula_hint": "origins-v2.3" },
     "inflows": [
       {
         "from": "0x28c6c06298d514db089934071355e5743bf21d60",
@@ -90,10 +90,10 @@ Provider: Alchemy (networks from `erc_8004.chains` where `is_active` + `subdomai
   "certificate": {
     "type": "ORIGINS",
     "version": "2.0",
-    "formula_version": "origins-v2.2",
+    "formula_version": "origins-v2.3",
     "grade": "B",
     "grade_breakdown": {
-      "formula_version": "origins-v2.2",
+      "formula_version": "origins-v2.3",
       "subject_type": "entity",
       "applied_rule": "B",
       "grade": "B",
@@ -152,7 +152,7 @@ Provider: Alchemy (networks from `erc_8004.chains` where `is_active` + `subdomai
         "organic_or_unknown": 50,
         "unknown": 7
       },
-      "formula_version": "origins-v2.2",
+      "formula_version": "origins-v2.3",
       "priced_inflows": 640,
       "unpriced_inflows": 160,
       "total_value_usd_priced": 12540.2
@@ -173,7 +173,7 @@ Notes:
 
 ## 2. Activity (`POST /v1/certificates/activity`)
 
-Provider: Alchemy (ventana **15 días**, redes desde `erc_8004.chains`; ≤500 txs/dir/red). USD vía DefiLlama. Edge formula `activity-v2.1`.
+Provider: Alchemy (ventana **15 días**, redes desde `erc_8004.chains`; ≤500 txs/dir/red). USD vía DefiLlama. Edge formula `activity-v2.2`.
 
 ```json
 {
@@ -198,7 +198,7 @@ Provider: Alchemy (ventana **15 días**, redes desde `erc_8004.chains`; ≤500 t
     "bot_like_score": 0.15,
     "nft_transfer_pct": 5.0,
     "fungible_transfer_pct": 95.0,
-    "selection": { "order": "desc", "window_days": 15, "max_per_direction": 500, "truncated": false, "formula_hint": "activity-v2.1" },
+    "selection": { "order": "desc", "window_days": 15, "max_per_direction": 500, "truncated": false, "formula_hint": "activity-v2.2" },
     "transfers": [
       {
         "ts": "2026-07-20T12:00:00Z",
@@ -214,7 +214,7 @@ Provider: Alchemy (ventana **15 días**, redes desde `erc_8004.chains`; ≤500 t
   "certificate": {
     "type": "ACTIVITY",
     "version": "2.0",
-    "formula_version": "activity-v2.1",
+    "formula_version": "activity-v2.2",
     "grade": "B",
     "grade_breakdown": {},
     "inputs_hash": "0x...",
@@ -472,8 +472,8 @@ La respuesta HTTP del agente incluye `analysis` + `certificate` (grade A–F). V
 
 | Tipo | Campos |
 |------|--------|
-| origins | `senders[]` (cap 1000); `inflows[]` con amount/usd; `value_relevant_*` + `priced_coverage_pct` (Edge `origins-v2.2`) |
-| activity | `counterparties[]`, `transfers[]` compacto **15d** (`window_days: 15`, formula `activity-v2.1`) |
+| origins | `senders[]` (cap 1000); `inflows[]` con amount/usd; `value_relevant_*` + `priced_coverage_pct` (Edge `origins-v2.3`) |
+| activity | `counterparties[]`, `transfers[]` compacto **15d** (`window_days: 15`, formula `activity-v2.2`) |
 | multichain | `chains[]` enriquecidos; Edge `multichain-v2.1` (GoldRush público) |
 | multichain_v2 | Alias Summit del mismo pipeline; log type `multichain_v2` |
 | portfolio | `positions[]` ricos; Edge `portfolio-v2.2` + dual totals `*_credible` / absurd filter |

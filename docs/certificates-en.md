@@ -2,7 +2,7 @@
 
 Walcert Agent is an ERC-8004 agent on **Celo**, built by **Global Score Agent**, that issues **A–F** wallet-maturity certificates through real-time analysis (*hot-analysis*). It keeps no historical store: every certificate is computed on demand from on-chain provider data.
 
-Scoring runs on **Supabase Edge Functions** (one per certificate type) and is enriched with labeled address lists (CEX, bridges, mixers and OFAC sanctions) stored in Supabase.
+Scoring runs on **Supabase Edge Functions** (one per type). Origins/Activity enrich labels via Walpulse `quality-lookup` (`iq-v1`, cache-only, `include_kleros: true`) — see [quality-lookup-walpulse.md](quality-lookup-walpulse.md).
 
 - **Free preview** (`POST /v1/preview/{type}`): only `origins` and `activity` (Alchemy). Returns the A–F grade only, no metrics or signature, no payment. Rate limit: 8 req/IP per 15 min. `multichain` and `portfolio` → 403 (use the paid endpoint).
 - **Full certificate** (`POST /v1/certificates/{type}`): returns the signed certificate (metrics + `data_hash`). Requires an **x402 payment** of **0.05 USDC** on **Celo**, **Base**, or **BNB** (`eip155:56`, Binance-Peg USDC, Permit2 via Dexter). Celo/Base: EIP-3009. BNB: one-time Permit2 `approve`; the 200 includes `certificate.receipt` (voucher for the soulbound NFT `claim`). Mint gas is paid in **BNB by the client** (not taken from the $0.05). Celo `giveFeedback` is unchanged.
@@ -19,7 +19,7 @@ Common grade scale:
 | D | Weak | Risk signals or thin track record |
 | F | Poor / High risk | Serious risk (e.g. sanctions/mixer) or no activity |
 
-**Production formulas (2026-07-27):**
+**Production formulas (2026-10-22):**
 
 | Type | `formula_version` | Cert `version` | Channel |
 |------|-------------------|----------------|---------|
@@ -27,6 +27,8 @@ Common grade scale:
 | Activity | `activity-v2.2` | `2.0` | public + Summit |
 | Multichain | `multichain-v2.1` | `2.0` | public + Summit |
 | Portfolio | `portfolio-v2.2` | `2.0` | public + Summit |
+
+Labels (Origins/Activity): Walpulse `quality-lookup` iq-v1 (`include_kleros: true`). See [quality-lookup-walpulse.md](quality-lookup-walpulse.md).
 
 ---
 
@@ -66,14 +68,16 @@ Common grade scale:
 
 **USD pricing (agent):** `stable` ($1), `historical` (DefiLlama UTC day), `spot` (DexScreener), `none` (`usd: null`, excluded from % and HHI). Counters: `priced_inflows`, `unpriced_inflows`, `total_value_usd_priced`.
 
-**Grading rules (`subject_type` default `entity`, order F→A→B→D→C):**
-- **F:** OFAC or `mixing_risk = high`.
-- **A:** `cex ≤ 40%`, `unique_senders ≥ 10`, `mixing = low`, age ≥ 365 days, **`top1_pct ≤ 60`**, **`hhi ≤ 0.55`**.
-- **B:** `cex ≤ 70%`, `unique_senders ≥ 5`, `mixing = low`, **`top1_pct ≤ 80`**, **`hhi ≤ 0.70`**.
-- **D:** `mixing = medium`, or CEX > 85% with ≤ 2 senders, or **`top1_pct ≥ 95`**, or **`hhi ≥ 0.90`**.
+**Grading rules (`subject_type` entity, order F→A→B→D→C) — v2.3 deltas vs v2.2:**
+- **F:** OFAC or `mixing_risk = high` (unchanged).
+- **A:** v2.2 gates **plus** `airdrop_pct ≤ 40` **and** no `kleros_risk_hit`.
+- **B:** v2.2 gates **plus** `airdrop_pct ≤ 70`.
+- **D:** v2.2 gates **plus** airdrop-dominated (`airdrop_pct ≥ 80` and `unique_senders ≤ 3`).
 - **C:** everything else.
 
-**Narrative:** concern if `top1 ≥ 70%` or `hhi ≥ 0.70`. Sender-diversity strength only if HHI ≤ 0.55.
+Protocol % is in `category_percentages` / narrative (soft strength ≥15% + mixing low); Sourcify is soft strength; Kleros risk soft-blocks **A** only. `details.label_hits` = real Walpulse counts.
+
+**Narrative:** concern if `top1 ≥ 70%` or `hhi ≥ 0.70`; airdrop / Kleros concerns as applicable.
 
 **Out of scope (v2):** multi-hop, Sepolia/IPFS ORIGO, Public API / WAMI.
 
@@ -97,14 +101,14 @@ Common grade scale:
 
 **Explainability:** `formula_version: "activity-v2.2"`, `grade_breakdown`, `inputs_hash`. Window **15d**. HHI>0.70 → D; 0.45–0.70 blocks A/B (falls to C). Airdrop share / Kleros risk soft-gates A/B.
 
-**Grading rules (order F→D→A→B→C):**
-- **F:** OFAC, wash high, `bot_like ≥ 0.8`, or `wash_score ≥ 0.75`.
-- **D:** mixer, circular+wash medium, unique &lt; 3, CEX &gt; 60%, **HHI &gt; 0.70**, or bot ≥ 0.55.
-- **A:** unique ≥ 25, wash low, no circular, HHI ≤ 0.25, bot &lt; 0.35, velocity ≤ 40 txs/day.
-- **B:** unique ≥ 12, wash low, HHI ≤ 0.35, bot &lt; 0.5.
-- **C:** everything else (incl. `0.45 < HHI ≤ 0.70` when no other rule applies).
+**Grading rules (order F→D→A→B→C) — v2.2 deltas vs v2.1:**
+- **F:** unchanged (OFAC, wash high, bot ≥ 0.8, wash_score ≥ 0.75).
+- **D:** v2.1 gates **plus** `airdrop_pct > 70`.
+- **A:** v2.1 gates **plus** `airdrop_pct ≤ 40` **and** no `kleros_risk_hit`.
+- **B:** v2.1 gates **plus** `airdrop_pct ≤ 60`.
+- **C:** everything else (incl. mid-HHI 0.45–0.70).
 
-**Narrative:** “counterparty diversity” strength only if unique ≥ 10 **and** HHI ≤ 0.35; concern if HHI > 0.45 (volume concentration).
+**Narrative:** “counterparty diversity” strength only if unique ≥ 10 **and** HHI ≤ 0.35; concern if HHI > 0.45; airdrop/protocol/Kleros in strengths/concerns by threshold.
 
 **Out of scope:** 30/90d windows; DEX router / known-bot labels (no catalog yet).
 

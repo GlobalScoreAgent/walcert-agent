@@ -2,7 +2,7 @@
 
 Walcert Agent es un agente ERC-8004 en **Celo**, desarrollado por **Global Score Agent**, que emite certificados de madurez de wallets con nota **A–F** mediante análisis en tiempo real (*hot-analysis*). No almacena históricos: cada certificado se calcula en el momento a partir de datos on-chain de los proveedores.
 
-El scoring corre en **Supabase Edge Functions** (una por tipo de certificado) y se enriquece con listas de direcciones etiquetadas (CEX, bridges, mixers y sanciones OFAC) almacenadas en Supabase.
+El scoring corre en **Supabase Edge Functions** (una por tipo). Origins/Activity enriquecen labels vía Walpulse `quality-lookup` (`iq-v1`, cache-only, `include_kleros: true`) — ver [quality-lookup-walpulse.md](quality-lookup-walpulse.md).
 
 - **Preview gratuito** (`POST /v1/preview/{tipo}`): solo `origins` y `activity` (Alchemy). Devuelve la nota A–F, sin métricas ni firma, sin pago. Rate limit: 8 req/IP cada 15 min. `multichain` y `portfolio` → 403 (usar el endpoint pagado).
 - **Certificado completo** (`POST /v1/certificates/{tipo}`): devuelve el certificado firmado (métricas + `data_hash`). Requiere **pago x402** de **0,05 USDC** en **Celo**, **Base** o **BNB** (`eip155:56`, Binance-Peg USDC, Permit2 vía Dexter). Celo/Base: EIP-3009. BNB: primer `approve` a Permit2; el 200 incluye `certificate.receipt` (voucher para `claim` del NFT soulbound). El gas del mint lo paga el **cliente** en BNB (no se descuenta de los 0,05 USDC). Celo `giveFeedback` no cambia.
@@ -36,46 +36,46 @@ Labels (Origins/Activity): Walpulse `quality-lookup` iq-v1 (`include_kleros: tru
 
 **Qué evalúa:** de dónde provienen los fondos de la wallet y qué tan limpio/diverso es ese origen.
 
-**Versión:** `origins-v2.2` (certificado `version: "2.0"`). Edge canónico: `main_origin_type` = argmax de categorías; HHI/top1 sobre inflows **priced**; `priced_coverage_pct` sobre inflows **value-relevant** (native/ERC-20 amount>0; NFTs fuera del denominador); concentración extrema bloquea A/B.
+**Versión:** `origins-v2.3` (certificado `version: "2.0"`). Edge canónico: `main_origin_type` = argmax de categorías; HHI/top1 sobre inflows **priced**; `priced_coverage_pct` sobre inflows **value-relevant** (native/ERC-20 amount>0; NFTs fuera del denominador); concentración extrema bloquea A/B.
 
 **Fuentes de datos:**
 - Hasta **500 transferencias entrantes por red** (Alchemy, orden ascendente histórico).
 - Redes = `erc_8004.chains` con `is_active` y `subdomain_alchemy` (fallback: `ALCHEMY_NETWORKS`).
 - Pricing USD: DefiLlama histórico (majors), stables = $1, spot DexScreener, o `null`.
-- Labels vía `walcert_lookup_labels` (CEX / bridge / mixer / OFAC).
+- Labels vía Walpulse `quality-lookup` iq-v1 (`include_kleros: true`): CEX / bridge / mixer / OFAC / airdrop / protocol + Kleros / Sourcify / Spellbook.
 
-**Flujo (prod):** el agente enriquece `analysis` (Alchemy + DefiLlama) → Edge `walcert-certificate-origins` aplica labels + 9 señales + nota. Edge **no** llama Alchemy ni DefiLlama.
+**Flujo (prod):** el agente enriquece `analysis` (Alchemy + DefiLlama) → Edge `walcert-certificate-origins` aplica labels Walpulse + 9 señales + nota. Edge **no** llama Alchemy ni DefiLlama.
 
 **Señales (9) — valores en `certificate.details`:**
 
 | # | Señal | Campo |
 |---|--------|--------|
-| 1 | % por categoría (CEX, bridge, mixer, OFAC, airdrop, orgánico…) | `category_percentages` |
+| 1 | % por categoría (CEX, bridge, mixer, OFAC, airdrop, protocol, orgánico…) | `category_percentages` |
 | 2 | Remitentes únicos | `unique_senders` |
 | 3 | Concentración HHI (USD priced) | `hhi` |
 | 4 | Top-1 / top-3 share | `concentration` |
-| 5 | Calidad de CEX | `cex_quality` |
+| 5 | Calidad de CEX (`cex_name` / Spellbook) | `cex_quality` |
 | 6 | Patrón temporal de funding | `temporal_funding` |
-| 7 | Exposición mixer / OFAC | `direct_exposure`, `mixing_risk`, `sanctions_hit` |
+| 7 | Exposición mixer / OFAC / Kleros | `direct_exposure`, `mixing_risk`, `sanctions_hit` |
 | 8 | Orgánico vs sintético (NFT / airdrop) | `organic_vs_synthetic` |
 | 9 | Antigüedad del primer funding | `first_funding_age_days` |
 
-**Coverage value-relevant (v2.2):** inflows `external`/`erc20` con `amount > 0` (excluye NFT y amount=0). Campos: `value_relevant_inflows`, `value_relevant_priced`, `value_relevant_unpriced`, `priced_coverage_pct`, `hhi_value_relevant_priced`. El **grade** usa HHI/top1 sobre USD priced; el summary explica coverage sobre el denominador value-relevant.
+Extras v2.3: `airdrop_percentage`, `protocol_percentage`, `quality_enrichment` (cobertura labels, Sourcify %), `label_hits` (conteos reales Walpulse: ofac/mixer/cex/bridge/airdrop/protocol/kleros/kleros_risk/sourcify).
 
-**Campos legacy (compatibilidad):** `main_origin_type`, `cex_percentage`, `bridge_percentage`.
+**Coverage value-relevant:** inflows `external`/`erc20` con `amount > 0` (excluye NFT y amount=0). Campos: `value_relevant_*`, `priced_coverage_pct`, `hhi_value_relevant_priced`. El **grade** usa HHI/top1 sobre USD priced.
 
-**Explicabilidad (raíz del certificado):** `formula_version: "origins-v2.2"`, `grade_breakdown` (regla aplicada + condiciones), `inputs_hash`. El agente sincroniza `analysis.origin_summary` desde el certificado tras Edge.
+**Explicabilidad:** `formula_version: "origins-v2.3"`, `grade_breakdown`, `inputs_hash`.
 
-**Pricing USD (agente):** `stable` ($1), `historical` (DefiLlama por día UTC), `spot` (DexScreener), `none` (`usd: null`, excluido de % y HHI). Contadores: `priced_inflows`, `unpriced_inflows`, `total_value_usd_priced`.
-
-**Reglas de nota (`subject_type` default `entity`, orden F→A→B→D→C):**
-- **F:** OFAC o `mixing_risk = high`.
-- **A:** `cex ≤ 40%`, `unique_senders ≥ 10`, `mixing = low`, antigüedad ≥ 365 días, **`top1_pct ≤ 60`**, **`hhi ≤ 0.55`**.
-- **B:** `cex ≤ 70%`, `unique_senders ≥ 5`, `mixing = low`, **`top1_pct ≤ 80`**, **`hhi ≤ 0.70`**.
-- **D:** `mixing = medium`, o CEX > 85% con ≤ 2 senders, o **`top1_pct ≥ 95`**, o **`hhi ≥ 0.90`**.
+**Reglas de nota (`subject_type` entity, orden F→A→B→D→C) — cambios v2.3 vs v2.2:**
+- **F:** OFAC o `mixing_risk = high` (sin cambio).
+- **A:** reglas v2.2 **más** `airdrop_pct ≤ 40` **y** sin `kleros_risk_hit`.
+- **B:** reglas v2.2 **más** `airdrop_pct ≤ 70`.
+- **D:** reglas v2.2 **más** airdrop dominado (`airdrop_pct ≥ 80` y `unique_senders ≤ 3`).
 - **C:** resto.
 
-**Narrativa:** concern si `top1 ≥ 70%` o `hhi ≥ 0.70`. Strength de diversidad de senders solo si HHI ≤ 0.55.
+Protocol % entra en `category_percentages` / narrativa (strength si ≥15% y mixing low); no es gate duro de A/B. Sourcify es soft-strength. Kleros risk solo soft-bloquea **A** (no fuerza D/F por sí solo).
+
+**Narrativa:** concern si `top1 ≥ 70%` o `hhi ≥ 0.70`; concern airdrop alto / Kleros risk; strength protocol ≥15% o Sourcify entre labeled.
 
 **Fuera de alcance (v2):** multi-hop, Sepolia/IPFS ORIGO, Public API / WAMI.
 
@@ -85,39 +85,28 @@ Labels (Origins/Activity): Walpulse `quality-lookup` iq-v1 (`include_kleros: tru
 
 **Qué evalúa:** el comportamiento reciente (ventana de **15 días**): con quién opera, concentración, wash/circular, bot-like, y exposición a CEX/mixers/OFAC.
 
-**Versión:** `activity-v2.1` (certificado `version: "2.0"`). Ventana **15 días**. HHI>0.70 → D; 0.45–0.70 bloquea A/B (cae en C).
+**Versión:** `activity-v2.2` (certificado `version: "2.0"`). Ventana **15 días**. HHI>0.70 → D; 0.45–0.70 bloquea A/B (cae en C).
 
-**Flujo (prod):** el agente enriquece `analysis` (Alchemy 15d in+out + DefiLlama) → Edge `walcert-certificate-activity` aplica labels + señales + nota. Edge **no** llama Alchemy ni DefiLlama.
+**Flujo (prod):** el agente enriquece `analysis` (Alchemy 15d in+out + DefiLlama) → Edge `walcert-certificate-activity` aplica labels Walpulse + señales + nota. Edge **no** llama Alchemy ni DefiLlama.
 
 **Fuentes de datos:**
 - Hasta **500 transferencias por dirección (in|out) y por red** (Alchemy, orden desc).
 - Redes = `erc_8004.chains` con Alchemy (fallback `ALCHEMY_NETWORKS`), igual que Origins.
 - Pricing USD híbrido: HHI / net-gross en USD priced; CEX reporta `% valor` y `% txs`.
-- Labels vía `walcert_lookup_labels` (CEX / bridge / mixer / OFAC).
+- Labels vía Walpulse `quality-lookup` iq-v1 (`include_kleros: true`).
 
-**Señales (en `certificate.details`):**
-1. `unique_counterparties`
-2. `counterparty_hhi`
-3. `cex_interaction_pct_value` + `cex_interaction_pct_txs` (+ legacy `cex_interaction_percentage`)
-4. `reciprocity_ratio`
-5. `net_to_gross_ratio`
-6. `velocity_txs_per_day`
-7. `burstiness_score`
-8. `token_diversity`
-9. `wash_trading_risk` / `circular_patterns` / `wash_score`
-10. `bot_like_score`
-11. `nft_transfer_pct` / `fungible_transfer_pct` / `nft_vs_fungible_ratio`
+**Señales (en `certificate.details`):** las de v2.1 **más** `airdrop_percentage`, `protocol_percentage`, `kleros_risk_hit`, `label_hits` (conteos Walpulse).
 
-**Explicabilidad:** `formula_version: "activity-v2.1"`, `grade_breakdown`, `inputs_hash`.
+**Explicabilidad:** `formula_version: "activity-v2.2"`, `grade_breakdown`, `inputs_hash`.
 
-**Reglas de nota (orden F→D→A→B→C):**
-- **F:** OFAC, wash high, `bot_like ≥ 0.8`, o `wash_score ≥ 0.75`.
-- **D:** mixer, circular+wash medium, unique &lt; 3, CEX &gt; 60%, **HHI &gt; 0.70**, o bot ≥ 0.55.
-- **A:** unique ≥ 25, wash low, sin circular, HHI ≤ 0.25, bot &lt; 0.35, velocity ≤ 40 txs/día.
-- **B:** unique ≥ 12, wash low, HHI ≤ 0.35, bot &lt; 0.5.
-- **C:** resto (incl. `0.45 < HHI ≤ 0.70` si no aplica otra regla).
+**Reglas de nota (orden F→D→A→B→C) — cambios v2.2 vs v2.1:**
+- **F:** sin cambio (OFAC, wash high, bot ≥ 0.8, wash_score ≥ 0.75).
+- **D:** reglas v2.1 **más** `airdrop_pct > 70`.
+- **A:** reglas v2.1 **más** `airdrop_pct ≤ 40` **y** sin `kleros_risk_hit`.
+- **B:** reglas v2.1 **más** `airdrop_pct ≤ 60`.
+- **C:** resto (incl. mid-HHI 0.45–0.70).
 
-**Narrativa:** strength “diversidad de contrapartes” solo si unique ≥ 10 **y** HHI ≤ 0.35; concern si HHI > 0.45 (concentración de volumen).
+**Narrativa:** strength diversidad solo si unique ≥ 10 **y** HHI ≤ 0.35; concern si HHI > 0.45; airdrop/protocol/Kleros en strengths/concerns según umbrales.
 
 **Fuera de alcance:** ventanas 30/90d; labels DEX routers / known bots (sin catálogo aún).
 

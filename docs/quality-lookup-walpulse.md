@@ -37,12 +37,21 @@ Batch 1–100; Walcert chunka automáticamente.
 | `sourcify` non-null | Soft strength (no gate A) |
 | `kleros` | Details + soft block A si tags de riesgo |
 
-Fórmulas: **origins-v2.3**, **activity-v2.2**.
+Fórmulas: **origins-v2.3**, **activity-v2.2**. Detalle de umbrales: [certificados-es.md](certificados-es.md) / [certificates-en.md](certificates-en.md).
+
+### Gates nuevos (resumen)
+
+| Fórmula | A | B | D |
+|---------|---|---|---|
+| `origins-v2.3` | + `airdrop ≤ 40%` + sin kleros risk | + `airdrop ≤ 70%` | + airdrop ≥80% y ≤3 senders |
+| `activity-v2.2` | + `airdrop ≤ 40%` + sin kleros risk | + `airdrop ≤ 60%` | + `airdrop > 70%` |
+
+`details.label_hits` en Origins y Activity = conteos reales de `summarizeQualityHits` (no placeholders).
 
 ## Código
 
 - `supabase/functions/_shared/walpulse_quality_lookup.ts`
-- `supabase/functions/_shared/labels.ts` → `lookupLabels()`
+- `supabase/functions/_shared/labels.ts` → `lookupLabels()` / `summarizeQualityHits()`
 - Callers: `walcert-certificate-origins`, `walcert-certificate-activity`, `api-wallet-labels`
 
-El RPC GSA `walcert_lookup_labels` y las tablas `wallets.*` de referencia fueron retirados tras el cutover (migración en `gsa-supabase-schema`).
+El RPC GSA `walcert_lookup_labels` y las tablas `wallets.*` de referencia fueron retirados tras el cutover (migración `20261022233000_walcert_drop_gsa_label_stack` en `gsa-supabase-schema`). Worker `dune_queries_import` retirado en `gsa-workers`.

@@ -54,8 +54,8 @@ Given a wallet address, the agent runs a fresh analysis and returns a signed cer
 
 | Type | What it certifies | Data provider |
 |------|-------------------|---------------|
-| `origins` | Source of funds — **`origins-v2.2`**: 9 signals, value-relevant coverage, concentration in grade | Alchemy + DefiLlama + labels |
-| `activity` | Recent activity — **`activity-v2.1`**: 15d window, 11 signals, HHI D@0.70 | Alchemy + DefiLlama + labels |
+| `origins` | Source of funds — **`origins-v2.3`**: 9 signals + Walpulse labels (airdrop/protocol/Kleros) | Alchemy + DefiLlama + Walpulse iq-v1 |
+| `activity` | Recent activity — **`activity-v2.2`**: 15d window + Walpulse labels (airdrop/Kleros soft-gates) | Alchemy + DefiLlama + Walpulse iq-v1 |
 | `multichain` | Multichain — **`multichain-v2.1`**: footprint / longevity / sampled intensity (public) | GoldRush (Celo native) |
 | `portfolio` | Portfolio — **`portfolio-v2.2`**: dual totals credible/raw, HHI, tiers | Zerion |
 
@@ -68,6 +68,7 @@ Full documentation:
 - Identity (agentId 9699 alignment): [docs/identity.md](docs/identity.md)
 - Business docs — English: [docs/certificates-en.md](docs/certificates-en.md)
 - Business docs — Español: [docs/certificados-es.md](docs/certificados-es.md)
+- Walpulse quality-lookup (labels): [docs/quality-lookup-walpulse.md](docs/quality-lookup-walpulse.md)
 - JSON schemas: [docs/certificate-json-schemas.md](docs/certificate-json-schemas.md)
 - Edge Function security: [docs/edge-function-security.md](docs/edge-function-security.md)
 - Virtuals ACP adapter (internal channel): [docs/virtuals-acp.md](docs/virtuals-acp.md)
@@ -85,11 +86,12 @@ flowchart LR
   Client -->|"POST /v1/preview/{type} (free)"| Agent
   Agent -->|"providers"| Providers["Alchemy / GoldRush / Zerion"]
   Agent -->|"scoring (Bearer secret)"| Edge["Supabase Edge Functions"]
-  Edge -->|"label lookup RPC"| DB["Supabase (walcert / wallets)"]
+  Edge -->|"quality-lookup iq-v1"| Walpulse["Walpulse (labels cache)"]
+  Edge -->|"logs / config"| DB["Supabase GSA (walcert)"]
   Agent -->|"x402 verify + settle"| Facilitator["x402.celo.org (Celo) / CDP (Base) / Dexter (BNB Permit2)"]
 ```
 
-The agent fetches raw data from the providers, forwards it to the corresponding Supabase Edge Function for scoring (authenticated with a shared secret), and returns the graded certificate.
+The agent fetches raw data from the providers, forwards it to the corresponding Supabase Edge Function for scoring (authenticated with a shared secret). Origins/Activity Edge call Walpulse `quality-lookup` for labels; the graded certificate is returned to the client.
 
 ## Endpoints
 
