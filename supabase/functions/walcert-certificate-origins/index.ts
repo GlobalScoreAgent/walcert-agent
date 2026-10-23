@@ -1,6 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { requireAgentSecret, jsonResponse, readJsonBody } from "./_shared/auth.ts";
-import { getServiceClient, lookupLabels, mapChain } from "./_shared/labels.ts";
+import {
+  getServiceClient,
+  lookupLabels,
+  mapChain,
+  summarizeQualityHits,
+} from "./_shared/labels.ts";
 import { buildCertificate, parseRequestBody } from "./_shared/certificate.ts";
 import { logCertificateRequest, parseAccessMeta } from "./_shared/logging.ts";
 import {
@@ -87,6 +92,7 @@ Deno.serve(async (req: Request) => {
     ].filter((p) => p.address.startsWith("0x"));
 
     const hits = await lookupLabels(client, addresses, chains, pairs);
+    const summaryHits = summarizeQualityHits(hits);
 
     // Prefer inflows path (v2); fall back to empty inflows → still grade from senders via synthetic inflows
     let inflows = inflowsRaw;
@@ -251,15 +257,8 @@ Deno.serve(async (req: Request) => {
         total_value_usd_priced: payload.total_value_usd_priced ?? null,
         airdrop_percentage: computed.airdrop_pct,
         protocol_percentage: computed.protocol_pct,
-        label_hits: {
-          ofac: computed.sanctions_hit ? 1 : 0,
-          mixer: (signals.direct_exposure as { mixer_hits?: number })?.mixer_hits || 0,
-          cex: 0,
-          bridge: 0,
-          airdrop: computed.airdrop_pct > 0 ? 1 : 0,
-          protocol: computed.protocol_pct > 0 ? 1 : 0,
-          kleros_risk: computed.kleros_risk_hit ? 1 : 0,
-        },
+        // Real Walpulse hit counts (same shape as Activity) — not % proxies / placeholders.
+        label_hits: summaryHits,
       },
       strengths,
       concerns,
