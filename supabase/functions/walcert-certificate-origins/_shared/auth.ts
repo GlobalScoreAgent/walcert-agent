@@ -53,7 +53,7 @@ export async function requireAgentSecret(req: Request): Promise<Response | null>
 
 export async function readJsonBody(req: Request): Promise<unknown> {
   const text = await req.text();
-  if (!text || text.length > 1_500_000) {
+  if (!text || text.length > 3_000_000) {
     throw new Error("invalid_body_size");
   }
   return JSON.parse(text);

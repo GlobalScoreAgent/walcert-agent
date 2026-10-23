@@ -1,10 +1,16 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  type ChainAddressItem,
+  type QualityHit,
+  type QualityKind,
+  chainIdFromSlug,
+  fetchWalpulseQualityLookup,
+  slugFromChainId,
+} from "./walpulse_quality_lookup.ts";
 
-export type LabelHit = {
-  kind: "ofac" | "mixer" | "cex" | "bridge";
-  name: string;
-  chain: string;
-};
+/** @deprecated Prefer QualityHit — kept as alias for scoring modules. */
+export type LabelHit = QualityHit;
+export type { QualityHit, QualityKind, ChainAddressItem };
 
 const CHAIN_ALIASES: Record<string, string[]> = {
   bsc: ["bsc", "bnb"],
@@ -36,77 +42,92 @@ export function getServiceClient(): SupabaseClient {
   return createClient(url, key);
 }
 
-const PRIORITY: Record<LabelHit["kind"], number> = {
-  ofac: 0,
-  mixer: 1,
-  cex: 2,
-  bridge: 3,
-};
+export function buildLookupItems(params: {
+  addresses?: string[];
+  pairs?: Array<{ address: string; chain_id?: number | null; chain?: string | null }>;
+  defaultChains?: string[];
+}): ChainAddressItem[] {
+  const out = new Map<string, ChainAddressItem>();
+  for (const p of params.pairs || []) {
+    const address = String(p.address || "").toLowerCase();
+    if (!address.startsWith("0x")) continue;
+    let chain_id = p.chain_id != null ? Number(p.chain_id) : NaN;
+    if (!Number.isFinite(chain_id) || chain_id <= 0) {
+      const fromSlug = chainIdFromSlug(mapChain(p.chain || ""));
+      if (fromSlug == null) continue;
+      chain_id = fromSlug;
+    }
+    out.set(`${chain_id}:${address}`, { chain_id, address });
+  }
+  const defaults = (params.defaultChains || [])
+    .map((c) => chainIdFromSlug(mapChain(c)))
+    .filter((id): id is number => id != null);
+  for (const raw of params.addresses || []) {
+    const address = String(raw || "").toLowerCase();
+    if (!address.startsWith("0x")) continue;
+    for (const chain_id of defaults) {
+      out.set(`${chain_id}:${address}`, { chain_id, address });
+    }
+  }
+  return [...out.values()];
+}
 
-/** Priority: ofac > mixer > cex > bridge via SECURITY DEFINER RPC */
+/**
+ * Quality labels via Walpulse iq-v1 (include_kleros).
+ * GSA walcert_lookup_labels fallback removed (cutover 2026-10-22).
+ */
 export async function lookupLabels(
-  client: SupabaseClient,
+  _client: SupabaseClient,
   addresses: string[],
   chains: string[],
-): Promise<Map<string, LabelHit>> {
-  const result = new Map<string, LabelHit>();
-  const addrs = [...new Set(addresses.map((a) => a.toLowerCase()).filter((a) => a.startsWith("0x")))];
-  if (addrs.length === 0) return result;
+  pairs?: Array<{ address: string; chain_id?: number | null; chain?: string | null }>,
+): Promise<Map<string, QualityHit>> {
+  const items = buildLookupItems({
+    addresses,
+    pairs,
+    defaultChains: chains,
+  });
 
-  const chainSet = new Set<string>();
-  for (const c of chains) {
-    for (const v of chainVariants(c)) chainSet.add(v);
+  const { byAddress, meta } = await fetchWalpulseQualityLookup(items, {
+    includeKleros: true,
+  });
+  if (meta.error && meta.error !== "disabled") {
+    console.error("walpulse quality-lookup meta", meta);
   }
-  const chainList = [...chainSet].filter(Boolean);
-
-  // Always resolve without chain filter first (addresses are global enough for hot path),
-  // then prefer hits whose chain matches when available.
-  const { data, error } = await client
-    .schema("walcert")
-    .rpc("walcert_lookup_labels", {
-      addrs,
-      chains: null,
-    });
-
-  if (error) {
-    console.error("walcert_lookup_labels error", error.message || error);
-    return result;
-  }
-
-  const hits = pickBest(data || []);
-  if (!chainList.length) return hits;
-
-  // Re-query with chain filter and merge (prefer chain-specific names)
-  const { data: scoped } = await client
-    .schema("walcert")
-    .rpc("walcert_lookup_labels", {
-      addrs,
-      chains: chainList,
-    });
-  if (scoped?.length) {
-    for (const [addr, hit] of pickBest(scoped)) {
-      hits.set(addr, hit);
-    }
-  }
-  return hits;
+  return byAddress;
 }
 
-function pickBest(
-  rows: Array<{ kind?: string; address?: string; name?: string; chain?: string }>,
-): Map<string, LabelHit> {
-  const result = new Map<string, LabelHit>();
-  for (const row of rows) {
-    const kind = row.kind as LabelHit["kind"];
-    const addr = (row.address || "").toLowerCase();
-    if (!addr || !kind || !(kind in PRIORITY)) continue;
-    const existing = result.get(addr);
-    if (!existing || PRIORITY[kind] < PRIORITY[existing.kind]) {
-      result.set(addr, {
-        kind,
-        name: String(row.name || kind),
-        chain: row.chain || "",
-      });
-    }
+export function summarizeQualityHits(hits: Map<string, QualityHit>): {
+  ofac: number;
+  mixer: number;
+  cex: number;
+  bridge: number;
+  airdrop: number;
+  protocol: number;
+  kleros: number;
+  kleros_risk: number;
+  sourcify: number;
+} {
+  let ofac = 0, mixer = 0, cex = 0, bridge = 0, airdrop = 0, protocol = 0;
+  let kleros = 0, kleros_risk = 0, sourcify = 0;
+  for (const h of hits.values()) {
+    if (h.kind === "ofac") ofac++;
+    else if (h.kind === "mixer") mixer++;
+    else if (h.kind === "cex") cex++;
+    else if (h.kind === "bridge") bridge++;
+    else if (h.kind === "airdrop") airdrop++;
+    else if (h.kind === "protocol") protocol++;
+    if (h.kleros_hit) kleros++;
+    if (h.kleros_risk) kleros_risk++;
+    if (h.sourcify_verified) sourcify++;
   }
-  return result;
+  return { ofac, mixer, cex, bridge, airdrop, protocol, kleros, kleros_risk, sourcify };
 }
+
+/** @deprecated use summarizeQualityHits */
+export function summarizeLabels(hits: Map<string, QualityHit>) {
+  const s = summarizeQualityHits(hits);
+  return { ofac: s.ofac, mixer: s.mixer, cex: s.cex, bridge: s.bridge };
+}
+
+export { slugFromChainId, chainIdFromSlug };

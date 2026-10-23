@@ -19,14 +19,16 @@ Escala común de notas:
 | D | Débil | Señales de riesgo o poca trayectoria |
 | F | Deficiente / Alto riesgo | Riesgo grave (p. ej. sanciones/mixer) o sin actividad |
 
-**Fórmulas en prod (2026-07-27):**
+**Fórmulas en prod (2026-10-22):**
 
 | Tipo | `formula_version` | Cert `version` | Canal |
 |------|-------------------|----------------|-------|
-| Origins | `origins-v2.2` | `2.0` | público + Summit |
-| Activity | `activity-v2.1` | `2.0` | público + Summit |
+| Origins | `origins-v2.3` | `2.0` | público + Summit |
+| Activity | `activity-v2.2` | `2.0` | público + Summit |
 | Multichain | `multichain-v2.1` | `2.0` | público + Summit |
 | Portfolio | `portfolio-v2.2` | `2.0` | público + Summit |
+
+Labels (Origins/Activity): Walpulse `quality-lookup` iq-v1 (`include_kleros: true`). Ver [quality-lookup-walpulse.md](quality-lookup-walpulse.md).
 
 ---
 

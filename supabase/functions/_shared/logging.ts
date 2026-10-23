@@ -14,7 +14,45 @@ export type CertificateRequestRow = {
   request_payload: unknown;
   certificate?: unknown | null;
   error_message?: string | null;
+  access_channel?: string | null;
+  marketplace?: string | null;
+  billing?: string | null;
 };
+
+export type WalcertAccessMeta = {
+  access_channel?: string;
+  marketplace?: string | null;
+  billing?: string;
+};
+
+/** Extract attribution meta from the agent → Edge request body. */
+export function parseAccessMeta(body: unknown): WalcertAccessMeta {
+  if (!body || typeof body !== "object") {
+    return { access_channel: "direct", marketplace: null, billing: "x402" };
+  }
+  const raw = (body as Record<string, unknown>)._walcert_access;
+  if (!raw || typeof raw !== "object") {
+    return { access_channel: "direct", marketplace: null, billing: "x402" };
+  }
+  const m = raw as Record<string, unknown>;
+  const channelRaw = String(m.access_channel || "direct").toLowerCase();
+  const channel =
+    channelRaw === "internal" || channelRaw === "summit"
+      ? channelRaw
+      : "direct";
+  const billing = String(m.billing || "x402").toLowerCase();
+  const marketplace =
+    m.marketplace == null || m.marketplace === ""
+      ? null
+      : String(m.marketplace).toLowerCase();
+  // Persist marketplace for internal (ACP) and summit (bsg2026) channels.
+  const keepMarketplace = channel === "internal" || channel === "summit";
+  return {
+    access_channel: channel,
+    marketplace: keepMarketplace ? marketplace : null,
+    billing: ["x402", "marketplace", "free"].includes(billing) ? billing : "x402",
+  };
+}
 
 /**
  * Best-effort insert of one processed request into walcert.certificate_requests.
@@ -42,6 +80,9 @@ export async function logCertificateRequest(
         request_payload: row.request_payload ?? {},
         certificate: row.certificate ?? null,
         error_message: row.error_message ?? null,
+        access_channel: row.access_channel ?? "direct",
+        marketplace: row.marketplace ?? null,
+        billing: row.billing ?? "x402",
       });
     if (error) {
       console.error("logCertificateRequest insert error", error.message || error);

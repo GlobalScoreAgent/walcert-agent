@@ -23,8 +23,8 @@ Common grade scale:
 
 | Type | `formula_version` | Cert `version` | Channel |
 |------|-------------------|----------------|---------|
-| Origins | `origins-v2.2` | `2.0` | public + Summit |
-| Activity | `activity-v2.1` | `2.0` | public + Summit |
+| Origins | `origins-v2.3` | `2.0` | public + Summit |
+| Activity | `activity-v2.2` | `2.0` | public + Summit |
 | Multichain | `multichain-v2.1` | `2.0` | public + Summit |
 | Portfolio | `portfolio-v2.2` | `2.0` | public + Summit |
 
@@ -34,13 +34,13 @@ Common grade scale:
 
 **What it evaluates:** where the wallet's funds come from and how clean/diverse that origin is.
 
-**Version:** `origins-v2.2` (certificate `version: "2.0"`). Edge-canonical: `main_origin_type` = category argmax; HHI/top1 over **priced** inflows; `priced_coverage_pct` over **value-relevant** inflows (native/ERC-20 amount>0; NFTs out of denominator); extreme concentration blocks A/B.
+**Version:** `origins-v2.3` (certificate `version: "2.0"`). Edge-canonical: `main_origin_type` = category argmax; HHI/top1 over **priced** inflows; `priced_coverage_pct` over **value-relevant** inflows (native/ERC-20 amount>0; NFTs out of denominator); extreme concentration blocks A/B. Labels via Walpulse iq-v1 (`include_kleros`).
 
 **Data sources:**
 - Up to **500 inbound transfers per network** (Alchemy, ascending historical order).
 - Networks from `erc_8004.chains` where `is_active` and `subdomain_alchemy` is set (fallback: `ALCHEMY_NETWORKS`).
 - USD pricing: DefiLlama historical (majors), stables = $1, DexScreener spot, or `null`.
-- Labels via `walcert_lookup_labels` (CEX / bridge / mixer / OFAC).
+- Labels via Walpulse `quality-lookup` iq-v1 (CEX / bridge / mixer / OFAC / airdrop / protocol + Kleros).
 
 **Flow (prod):** the agent enriches `analysis` (Alchemy + DefiLlama) → Edge `walcert-certificate-origins` applies labels + 9 signals + grade. Edge does **not** call Alchemy or DefiLlama.
 
@@ -62,7 +62,7 @@ Common grade scale:
 
 **Value-relevant coverage (v2.2):** inflows `external`/`erc20` with `amount > 0` (excludes NFT and amount=0). Fields: `value_relevant_inflows`, `value_relevant_priced`, `value_relevant_unpriced`, `priced_coverage_pct`, `hhi_value_relevant_priced`. **Grade** uses HHI/top1 on priced USD; summary explains coverage on the value-relevant denominator.
 
-**Explainability (certificate root):** `formula_version: "origins-v2.2"`, `grade_breakdown` (applied rule + conditions), `inputs_hash`. Agent syncs `analysis.origin_summary` from the certificate after Edge.
+**Explainability (certificate root):** `formula_version: "origins-v2.3"`, `grade_breakdown` (applied rule + conditions), `inputs_hash`. Agent syncs `analysis.origin_summary` from the certificate after Edge.
 
 **USD pricing (agent):** `stable` ($1), `historical` (DefiLlama UTC day), `spot` (DexScreener), `none` (`usd: null`, excluded from % and HHI). Counters: `priced_inflows`, `unpriced_inflows`, `total_value_usd_priced`.
 
@@ -83,7 +83,7 @@ Common grade scale:
 
 **What it evaluates:** recent behavior (**15-day** window): counterparties, concentration, wash/circular, bot-like patterns, and CEX/mixer/OFAC exposure.
 
-**Version:** `activity-v2.1` (certificate `version: "2.0"`).
+**Version:** `activity-v2.2` (certificate `version: "2.0"`).
 
 **Flow (prod):** agent enriches `analysis` (Alchemy 15d in+out + DefiLlama) → Edge `walcert-certificate-activity` applies labels + signals + grade.
 
@@ -91,11 +91,11 @@ Common grade scale:
 - Up to **500 transfers per direction (in|out) per network** (Alchemy, desc).
 - Networks from `erc_8004.chains` with Alchemy (fallback `ALCHEMY_NETWORKS`), same as Origins.
 - Hybrid USD pricing: HHI / net-gross on priced USD; CEX reports value % and txs %.
-- Labels via `walcert_lookup_labels`.
+- Labels via Walpulse `quality-lookup` iq-v1 (`include_kleros`).
 
 **Signals (in `certificate.details`):** unique counterparties, HHI, CEX value+txs %, reciprocity, net/gross, velocity, burstiness, token diversity, wash score, bot-like, NFT vs fungible ratio.
 
-**Explainability:** `formula_version: "activity-v2.1"`, `grade_breakdown`, `inputs_hash`. Window **15d**. HHI>0.70 → D; 0.45–0.70 blocks A/B (falls to C).
+**Explainability:** `formula_version: "activity-v2.2"`, `grade_breakdown`, `inputs_hash`. Window **15d**. HHI>0.70 → D; 0.45–0.70 blocks A/B (falls to C). Airdrop share / Kleros risk soft-gates A/B.
 
 **Grading rules (order F→D→A→B→C):**
 - **F:** OFAC, wash high, `bot_like ≥ 0.8`, or `wash_score ≥ 0.75`.

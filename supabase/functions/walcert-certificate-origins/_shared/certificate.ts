@@ -46,12 +46,17 @@ export async function buildCertificate(params: {
   details: Record<string, unknown>;
   strengths: Bilingual[];
   concerns: Bilingual[];
+  version?: string;
+  formula_version?: string;
+  grade_breakdown?: Record<string, unknown>;
+  inputs_hash?: string;
 }) {
   const certificate_id = globalThis.crypto.randomUUID();
-  const base = {
+  const version = params.version ?? "1.0";
+  const base: Record<string, unknown> = {
     certificate_id,
     type: params.type,
-    version: "1.0",
+    version,
     wallet: params.wallet.toLowerCase(),
     chain_id: params.chain_id ?? 42220,
     analyzed_at: params.analyzed_at,
@@ -65,6 +70,9 @@ export async function buildCertificate(params: {
     strengths: params.strengths,
     concerns: params.concerns,
   };
+  if (params.formula_version) base.formula_version = params.formula_version;
+  if (params.grade_breakdown) base.grade_breakdown = params.grade_breakdown;
+  if (params.inputs_hash) base.inputs_hash = params.inputs_hash;
   const canonical = JSON.stringify(base);
   const data_hash = await sha256Hex(canonical);
   return { ...base, data_hash };

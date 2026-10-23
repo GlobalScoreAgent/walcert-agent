@@ -91,8 +91,7 @@ use the shared-secret model instead (see §5). Shared code lives under
 | `walcert.certificate_requests` | table | One row per issued certificate: metadata, `request_payload`, `certificate`, `signature`, `onchain`, `onchain_tx_hash`, `error_message` |
 | `walcert.x402_payments` | table | One row per settled x402 payment |
 | `walcert.edge_config` | table | Fallback key/value for the Edge shared secret |
-| `walcert.walcert_lookup_labels(...)` | RPC (`SECURITY DEFINER`) | Label lookup that reads the restricted `wallets.*` address tables |
-| `wallets.cex_addresses` / `bridge_addresses` / `mixer_addresses` / `ofac_sanction_addresses` | tables | Labeled addresses used for origins/activity scoring |
+| *(labels)* | external | Origins/Activity labels via Walpulse `quality-lookup` (`iq-v1`) — see `docs/quality-lookup-walpulse.md` |
 
 > **Security note (surfaced by Supabase advisor):** `walcert.edge_config` currently has
 > Row Level Security **disabled**, so anyone with the project `anon` key can read the
@@ -114,7 +113,7 @@ The monitor wallet only needs a little **CELO** for gas (`giveFeedback` costs ~0
 ## 3. Prerequisites
 
 - Python **3.11+**
-- A Supabase project (with the `walcert` schema and the `wallets.*` label tables)
+- A Supabase project (with the `walcert` schema) + Walpulse quality-lookup secrets on Edge
 - [Supabase CLI](https://supabase.com/docs/guides/cli) (`supabase --version`)
 - Provider API keys: **Alchemy**, **GoldRush**, **Zerion**
 - An **x402 facilitator API key** from [x402.celo.org](https://x402.celo.org) (for Celo `/settle`)
@@ -152,9 +151,9 @@ curl -s http://127.0.0.1:8000/health
 
 ### 5.1 Database objects
 
-The `walcert` schema, the `wallets.*` label tables and the
-`walcert.walcert_lookup_labels` RPC must already exist in the target project. If you are
-provisioning a **fresh** project, recreate:
+The `walcert` schema must already exist. Label enrichment is **external** (Walpulse
+`quality-lookup`); GSA no longer hosts `walcert_lookup_labels` or `wallets.*` label tables
+(dropped 2026-10-22). If you are provisioning a **fresh** project, recreate:
 
 - `walcert.certificate_requests` with columns:
   `id`, `created_at`, `certificate_type`, `wallet`, `grade`, `grade_label`,
@@ -166,11 +165,9 @@ provisioning a **fresh** project, recreate:
   see `supabase/migrations/20260723_certificate_requests_attribution.sql`.
 - `walcert.x402_payments` for settled payments.
 - `walcert.edge_config` (optional secret fallback — prefer Edge secrets instead).
-- `walcert.walcert_lookup_labels(p_addresses text[], p_chains text[])` as a
-  `SECURITY DEFINER` function that reads `wallets.cex_addresses`, `wallets.bridge_addresses`,
-  `wallets.mixer_addresses`, `wallets.ofac_sanction_addresses` and returns
-  `{address, label, label_type, source}`. This lets the Edge (running as `anon`) query
-  the restricted `wallets` schema safely.
+- Edge secrets for Walpulse: `WALPULSE_ANON_KEY`, `WALCERT_QUALITY_LOOKUP_SECRET`
+  (and optionally `WALPULSE_QUALITY_LOOKUP_ENABLED=true`). See
+  `docs/quality-lookup-walpulse.md`.
 
 ### 5.2 Edge secrets
 
@@ -181,6 +178,9 @@ supabase secrets set \
   EDGE_SHARED_SECRET=<32+ byte random, e.g. openssl rand -hex 32> \
   WALCERT_ERC8004_AGENT_ID=9699 \
   WALCERT_AGENT_WALLET=0xF4D938200445B0Df0f028af6d90D016147AEd095 \
+  WALPULSE_ANON_KEY=<Walpulse anon/publishable JWT> \
+  WALCERT_QUALITY_LOOKUP_SECRET=<shared secret matching Walpulse Edge secret> \
+  WALPULSE_QUALITY_LOOKUP_ENABLED=true \
   --project-ref <YOUR_PROJECT_REF>
 ```
 
@@ -189,6 +189,9 @@ and `WALCERT_AGENT_WALLET` populate the certificate `issuer` block (agentId + wa
 Code fallbacks in `supabase/functions/**/_shared/certificate.ts` and agent
 `app/config.py` also default to **9699** / `0xF4D938…AEd095` if those env vars are
 missing — keep secrets, `.env`, and defaults aligned.
+
+Walpulse secrets power Origins/Activity labels (`iq-v1`, `include_kleros: true`). Never set
+Walpulse `service_role` on GSA.
 
 Optional for `walcert-certificate-verify` (defaults shown):
 

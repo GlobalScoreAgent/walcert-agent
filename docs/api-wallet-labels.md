@@ -1,8 +1,8 @@
 # API — Wallet labels lookup (`api-wallet-labels`)
 
-Hackathon / demo endpoint: label lookup for addresses against `wallets.cex_addresses`, `wallets.bridge_addresses`, `wallets.mixer_addresses`, and `wallets.ofac_sanction_addresses` via `walcert.walcert_lookup_labels`.
+Demo endpoint: label lookup for addresses via **Walpulse quality-lookup** (`iq-v1`, `include_kleros: true`).
 
-**Not a full table dump.** Client sends addresses; Edge returns hits.
+**Not a full table dump.** Client sends addresses; Edge returns hits from Walpulse cache.
 
 ## Deploy
 
@@ -10,7 +10,7 @@ Hackathon / demo endpoint: label lookup for addresses against `wallets.cex_addre
 supabase functions deploy api-wallet-labels --no-verify-jwt
 ```
 
-Uses `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (same as other Walcert Edge Functions).
+Requires Edge secrets: `WALPULSE_QUALITY_LOOKUP_ENABLED`, `WALPULSE_ANON_KEY`, `WALCERT_QUALITY_LOOKUP_SECRET` (see [quality-lookup-walpulse.md](quality-lookup-walpulse.md)).
 
 ## Contract
 
@@ -25,10 +25,10 @@ Content-Type: application/json
 ```
 
 - Max **500** addresses per request.
-- Priority: `ofac` > `mixer` > `cex` > `bridge`.
+- Priority: `ofac` > `mixer` > `cex` > `bridge` > `airdrop` > `protocol`.
 - CORS: `*` (demo).
 
-Public router (optional): `POST https://api.globalscoreagent.com/v1/wallets/labels` (Cloudflare Worker `gsa-api-router`, 20 req/min/IP).
+Public router (optional): `POST https://api.globalscoreagent.com/v1/wallets/labels`.
 
 ## Response
 
@@ -36,8 +36,20 @@ Public router (optional): `POST https://api.globalscoreagent.com/v1/wallets/labe
 {
   "success": true,
   "data": {
+    "provider": "walpulse_quality_lookup",
+    "contract": "iq-v1",
     "hits": [
-      { "address": "0x...", "kind": "cex", "name": "Binance", "chain": "ethereum" }
+      {
+        "address": "0x...",
+        "kind": "cex",
+        "name": "Binance",
+        "chain": "ethereum",
+        "sourcify_verified": false,
+        "kleros_hit": true,
+        "kleros_risk": false,
+        "spellbook_categories": ["institution"],
+        "source": "walpulse"
+      }
     ],
     "not_found": ["0x..."],
     "queried": 1
